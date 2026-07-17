@@ -4,38 +4,22 @@ import type { RefObject } from 'react';
 import type { DocumentRenderer, DocumentRendererProps, FitMode } from '../types';
 import { countMatches } from '../utils/highlight';
 
-const pdfWorkerFileName = 'pdf.worker.min.mjs';
+let pdfWorkerModuleReady: Promise<void> | null = null;
+let hasConfiguredPdfWorker = false;
 
-function defaultPdfWorkerSource(): string | undefined {
-  if (typeof window === 'undefined') {
-    return undefined;
+async function ensurePdfWorkerReady(): Promise<void> {
+  if (typeof window === 'undefined' || hasConfiguredPdfWorker) {
+    return;
   }
 
-  if (import.meta.env.DEV) {
-    return `${window.location.origin}/node_modules/pdfjs-dist/build/pdf.worker.min.mjs`;
-  }
-
-  try {
-    const moduleUrl = import.meta.url;
-    const lastSlashIndex = moduleUrl.lastIndexOf('/');
-
-    if (moduleUrl && lastSlashIndex >= 0) {
-      return `${moduleUrl.slice(0, lastSlashIndex + 1)}${pdfWorkerFileName}`;
-    }
-  } catch {
-    return pdfWorkerFileName;
-  }
-
-  return pdfWorkerFileName;
-}
-
-const initialPdfWorkerSource = defaultPdfWorkerSource();
-
-if (initialPdfWorkerSource) {
-  pdfjs.GlobalWorkerOptions.workerSrc = initialPdfWorkerSource;
+  // Register PDF.js' local worker module before getDocument so Vite consumers do
+  // not fetch a worker from /node_modules/.vite/deps.
+  pdfWorkerModuleReady ??= import('pdfjs-dist/build/pdf.worker.min.mjs').then(() => undefined);
+  await pdfWorkerModuleReady;
 }
 
 export function configurePdfWorker(workerSrc: string): void {
+  hasConfiguredPdfWorker = true;
   pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
 }
 
@@ -217,42 +201,60 @@ function PdfRendererComponent({ file, state, actions, viewportRef }: DocumentRen
   useEffect(() => {
     let cancelled = false;
     let loadedDocument: PdfDocument | null = null;
-    const loadingTask = pdfjs.getDocument({
-      data: file.arrayBuffer.slice(0),
-      useWorkerFetch: false,
-      isEvalSupported: false,
-    });
+    let loadingTask: PdfLoadingTask | null = null;
 
     setIsLoading(true);
     setPdf(null);
     setPageSearchCounts([]);
 
-    loadingTask.promise
-      .then((document) => {
-        if (cancelled) {
-          document.destroy();
-          return;
-        }
+    async function loadPdf() {
+      await ensurePdfWorkerReady();
 
-        loadedDocument = document;
-        setPdf(document);
-        setIsLoading(false);
-        actions.setPageCount(document.numPages);
-        actions.setDocumentInfo({
-          title: file.fileName,
-          pageCount: document.numPages,
-        });
-      })
-      .catch((error: unknown) => {
-        if (!cancelled && !isPdfCancellationError(error)) {
-          setIsLoading(false);
-          actions.reportError(error);
-        }
+      if (cancelled) {
+        return;
+      }
+
+      const nextLoadingTask = pdfjs.getDocument({
+        data: file.arrayBuffer.slice(0),
+        useWorkerFetch: false,
+        isEvalSupported: false,
       });
+      loadingTask = nextLoadingTask;
+
+      nextLoadingTask.promise
+        .then((document) => {
+          if (cancelled) {
+            document.destroy();
+            return;
+          }
+
+          loadedDocument = document;
+          setPdf(document);
+          setIsLoading(false);
+          actions.setPageCount(document.numPages);
+          actions.setDocumentInfo({
+            title: file.fileName,
+            pageCount: document.numPages,
+          });
+        })
+        .catch((error: unknown) => {
+          if (!cancelled && !isPdfCancellationError(error)) {
+            setIsLoading(false);
+            actions.reportError(error);
+          }
+        });
+    }
+
+    loadPdf().catch((error: unknown) => {
+      if (!cancelled && !isPdfCancellationError(error)) {
+        setIsLoading(false);
+        actions.reportError(error);
+      }
+    });
 
     return () => {
       cancelled = true;
-      loadingTask.destroy();
+      loadingTask?.destroy();
       loadedDocument?.destroy();
     };
   }, [actions, file]);

@@ -1,6 +1,6 @@
 {
   "name": "@shahajimbhosle/local-doc-viewer",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Privacy-first React document viewer with local-only rendering and extensible client-side renderers.",
   "type": "module",
   "main": "./dist/index.umd.cjs",

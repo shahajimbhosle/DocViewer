@@ -83,18 +83,21 @@ For highly sensitive deployments, pair this with a strict Content Security Polic
 
 ### PDF Worker
 
-The PDF.js worker is published as a separate package asset at:
+PDF rendering works locally without a CDN or third-party worker URL. By default, the viewer registers PDF.js' packaged worker module before opening a PDF, which avoids Vite resolving the worker from `/node_modules/.vite/deps`.
+
+The worker is also published as a separate package asset for advanced setups:
 
 ```text
 @shahajimbhosle/local-doc-viewer/pdf.worker.min.mjs
 ```
 
-The viewer tries to resolve that worker automatically from the package bundle. If your build system serves package assets from a different location, copy `pdf.worker.min.mjs` to your public assets and configure it once before rendering PDFs:
+If your application wants to provide its own worker URL, configure it once before rendering PDFs:
 
 ```tsx
 import { configurePdfWorker } from '@shahajimbhosle/local-doc-viewer';
+import pdfWorkerUrl from '@shahajimbhosle/local-doc-viewer/pdf.worker.min.mjs?url';
 
-configurePdfWorker('/pdf.worker.min.mjs');
+configurePdfWorker(pdfWorkerUrl);
 ```
 
 The worker is intentionally not embedded as an inline base64 JavaScript data URL in the library bundle, because large inline executable payloads can trigger package malware scanners even when the code comes from PDF.js.
