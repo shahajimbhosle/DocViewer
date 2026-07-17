@@ -1,5 +1,6 @@
 export { DocumentViewer } from './DocumentViewer';
 export { builtInRenderers } from './renderers';
+export { configurePdfWorker } from './renderers/PdfRenderer';
 export type {
   BinaryDocumentData,
   DocumentInfo,

@@ -1,11 +1,43 @@
 import * as pdfjs from 'pdfjs-dist';
-import pdfWorkerSource from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { DocumentRenderer, DocumentRendererProps, FitMode } from '../types';
 import { countMatches } from '../utils/highlight';
 
-pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerSource;
+const pdfWorkerFileName = 'pdf.worker.min.mjs';
+
+function defaultPdfWorkerSource(): string | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  if (import.meta.env.DEV) {
+    return `${window.location.origin}/node_modules/pdfjs-dist/build/pdf.worker.min.mjs`;
+  }
+
+  try {
+    const moduleUrl = import.meta.url;
+    const lastSlashIndex = moduleUrl.lastIndexOf('/');
+
+    if (moduleUrl && lastSlashIndex >= 0) {
+      return `${moduleUrl.slice(0, lastSlashIndex + 1)}${pdfWorkerFileName}`;
+    }
+  } catch {
+    return pdfWorkerFileName;
+  }
+
+  return pdfWorkerFileName;
+}
+
+const initialPdfWorkerSource = defaultPdfWorkerSource();
+
+if (initialPdfWorkerSource) {
+  pdfjs.GlobalWorkerOptions.workerSrc = initialPdfWorkerSource;
+}
+
+export function configurePdfWorker(workerSrc: string): void {
+  pdfjs.GlobalWorkerOptions.workerSrc = workerSrc;
+}
 
 type PdfLoadingTask = ReturnType<typeof pdfjs.getDocument>;
 type PdfDocument = Awaited<PdfLoadingTask['promise']>;

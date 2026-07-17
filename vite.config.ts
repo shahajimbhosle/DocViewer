@@ -1,6 +1,11 @@
 import react from '@vitejs/plugin-react';
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dts from 'vite-plugin-dts';
 import { defineConfig } from 'vite';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   plugins: [
@@ -9,6 +14,16 @@ export default defineConfig({
       insertTypesEntry: true,
       tsconfigPath: './tsconfig.build.json',
     }),
+    {
+      name: 'copy-pdf-worker',
+      closeBundle() {
+        const source = resolve(projectRoot, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+        const target = resolve(projectRoot, 'dist/pdf.worker.min.mjs');
+
+        mkdirSync(dirname(target), { recursive: true });
+        copyFileSync(source, target);
+      },
+    },
   ],
   build: {
     lib: {

@@ -63,7 +63,7 @@ By default, the viewer:
 - Uses local `Blob` URLs for preview/download/print flows
 - Sanitizes generated HTML and removes remote resource references from rendered HTML
 - Removes external PPTX relationships before rendering so linked resources are not fetched
-- Uses a bundled PDF.js worker instead of a CDN worker
+- Uses a packaged PDF.js worker instead of a CDN worker
 
 If your app serves confidential documents from its own trusted private endpoint, opt in explicitly:
 
@@ -80,6 +80,24 @@ If your app serves confidential documents from its own trusted private endpoint,
 ```
 
 For highly sensitive deployments, pair this with a strict Content Security Policy that blocks outbound connections except your own origin.
+
+### PDF Worker
+
+The PDF.js worker is published as a separate package asset at:
+
+```text
+@shahajimbhosle/local-doc-viewer/pdf.worker.min.mjs
+```
+
+The viewer tries to resolve that worker automatically from the package bundle. If your build system serves package assets from a different location, copy `pdf.worker.min.mjs` to your public assets and configure it once before rendering PDFs:
+
+```tsx
+import { configurePdfWorker } from '@shahajimbhosle/local-doc-viewer';
+
+configurePdfWorker('/pdf.worker.min.mjs');
+```
+
+The worker is intentionally not embedded as an inline base64 JavaScript data URL in the library bundle, because large inline executable payloads can trigger package malware scanners even when the code comes from PDF.js.
 
 ## Controls
 
