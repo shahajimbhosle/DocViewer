@@ -1,0 +1,66 @@
+{
+  "name": "@shahajimbhosle/local-doc-viewer",
+  "version": "1.0.0",
+  "description": "Privacy-first React document viewer with local-only rendering and extensible client-side renderers.",
+  "type": "module",
+  "main": "./dist/index.umd.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.umd.cjs"
+    },
+    "./style.css": "./dist/style.css"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -p tsconfig.build.json && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run typecheck",
+    "preview": "vite preview --host 0.0.0.0"
+  },
+  "keywords": [
+    "react",
+    "document-viewer",
+    "pdf",
+    "docx",
+    "xlsx",
+    "pptx",
+    "privacy",
+    "local-first"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.2.0",
+    "react-dom": ">=18.2.0"
+  },
+  "dependencies": {
+    "chart.js": "^4.5.1",
+    "docx-preview": "^0.4.0",
+    "dompurify": "^3.2.5",
+    "jszip": "^3.10.1",
+    "lucide-react": "^0.468.0",
+    "marked": "^14.1.4",
+    "pdfjs-dist": "^4.8.69",
+    "pptxviewjs": "^1.1.9"
+  },
+  "devDependencies": {
+    "@types/dompurify": "^3.0.5",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.1",
+    "vite-plugin-dts": "^4.3.0"
+  },
+  "sideEffects": [
+    "**/*.css"
+  ]
+}
