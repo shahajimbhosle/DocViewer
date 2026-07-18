@@ -1,6 +1,6 @@
 {
   "name": "@shahajimbhosle/local-doc-viewer",
-  "version": "1.0.3",
+  "version": "1.0.5",
   "description": "Privacy-first React document viewer for local-only PDF, DOCX, XLSX, ODS, PPTX, image, media, Markdown, CSV, and text previews.",
   "type": "module",
   "author": "Shahaji Bhosle",
@@ -28,6 +28,7 @@
   "files": [
     "dist",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {

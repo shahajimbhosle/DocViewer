@@ -131,6 +131,19 @@
   cursor: not-allowed;
 }
 
+.ldv-icon-button[aria-busy="true"] {
+  cursor: progress;
+}
+
+.ldv-icon-button-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(100, 116, 139, 0.28);
+  border-top-color: var(--ldv-accent);
+  border-radius: 999px;
+  animation: ldv-spin 0.7s linear infinite;
+}
+
 .ldv-zoom-reset {
   min-width: 76px;
   height: 32px;
@@ -207,6 +220,11 @@
 .ldv-renderer-pptx .ldv-viewport,
 .ldv-renderer-spreadsheet .ldv-viewport,
 .ldv-renderer-csv .ldv-viewport {
+  padding: 0;
+}
+
+.ldv-renderer-pdf .ldv-viewport {
+  overflow: hidden;
   padding: 0;
 }
 
@@ -321,6 +339,186 @@
   display: block;
 }
 
+.ldv-pdf-page-surface {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.ldv-pdf-highlight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ldv-pdf-search-highlight {
+  position: absolute;
+  z-index: 1;
+  border-radius: 2px;
+  background: rgba(255, 241, 168, 0.68);
+  mix-blend-mode: multiply;
+}
+
+.ldv-pdf-shell {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  grid-template-columns: 168px minmax(0, 1fr);
+  background: #e8edf2;
+}
+
+.ldv-pdf-shell.ldv-pdf-sidebar-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr);
+}
+
+.ldv-pdf-shell.ldv-pdf-sidebar-disabled {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ldv-pdf-sidebar {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--ldv-border);
+  background: #f8fafc;
+}
+
+.ldv-pdf-sidebar-toggle {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-end;
+  margin: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ldv-text);
+  cursor: pointer;
+}
+
+.ldv-pdf-sidebar-collapsed .ldv-pdf-sidebar-toggle {
+  align-self: center;
+}
+
+.ldv-pdf-sidebar-toggle:hover {
+  background: #edf2f7;
+}
+
+.ldv-pdf-sidebar-toggle:focus-visible,
+.ldv-pdf-thumbnail:focus-visible {
+  outline: 2px solid var(--ldv-accent);
+  outline-offset: 2px;
+}
+
+.ldv-pdf-thumbnail-list,
+.ldv-pptx-thumbnail-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 6px 12px;
+}
+
+.ldv-pdf-thumbnail-virtual-space,
+.ldv-pptx-thumbnail-virtual-space {
+  position: relative;
+  width: 100%;
+}
+
+.ldv-pdf-thumbnail,
+.ldv-pptx-thumbnail {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 8px);
+}
+
+.ldv-pdf-thumbnail:hover {
+  background: #eef3f8;
+}
+
+.ldv-pdf-thumbnail[aria-current="page"] {
+  border-color: var(--ldv-accent);
+  background: #e8f5f3;
+}
+
+.ldv-pdf-thumbnail-number {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: center;
+  color: #4a5868;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.ldv-pdf-thumbnail-canvas,
+.ldv-pptx-thumbnail-canvas {
+  display: block;
+  max-width: 100%;
+  border: 0;
+  background: var(--ldv-panel);
+}
+
+.ldv-pdf-thumbnail-preview,
+.ldv-pptx-thumbnail-preview {
+  position: relative;
+  box-sizing: content-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cfd8e3;
+  background: var(--ldv-panel);
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.ldv-thumbnail-loader,
+.ldv-thumbnail-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ldv-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.ldv-thumbnail-loader-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(100, 116, 139, 0.28);
+  border-top-color: var(--ldv-accent);
+  border-radius: 999px;
+  animation: ldv-spin 0.7s linear infinite;
+}
+
+.ldv-pdf-main {
+  min-width: 0;
+  overflow: auto;
+  padding: 4px;
+}
+
+.ldv-pdf-continuous-stage {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.ldv-pdf-page-frame {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+}
+
 .ldv-pptx-shell {
   display: grid;
   width: 100%;
@@ -377,19 +575,13 @@
   outline-offset: 2px;
 }
 
-.ldv-pptx-thumbnail-list {
-  display: grid;
-  gap: 8px;
-  overflow: auto;
-  padding: 0 8px 12px;
-}
-
+.ldv-pdf-thumbnail,
 .ldv-pptx-thumbnail {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr);
-  gap: 6px;
+  grid-template-columns: 20px auto;
+  gap: 4px;
   align-items: start;
-  padding: 6px;
+  padding: 4px 4px 10px;
   border: 1px solid transparent;
   border-radius: 6px;
   background: transparent;
@@ -421,9 +613,8 @@
 .ldv-pptx-thumbnail-canvas {
   display: block;
   max-width: 100%;
-  border: 1px solid #cfd8e3;
+  border: 0;
   background: var(--ldv-panel);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
 }
 
 .ldv-pptx-main {
@@ -434,15 +625,31 @@
 
 .ldv-pptx-stage {
   display: flex;
+  width: max-content;
+  min-width: 100%;
   min-height: 100%;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 .ldv-pptx-slide-frame {
   position: relative;
   flex: 0 0 auto;
   background: var(--ldv-panel);
+}
+
+.ldv-pptx-highlight-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.ldv-pptx-search-highlight {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid rgba(217, 119, 6, 0.65);
+  border-radius: 3px;
+  background: rgba(255, 241, 168, 0.42);
 }
 
 .ldv-pptx-canvas {
@@ -621,6 +828,7 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  overflow-anchor: none;
   overscroll-behavior: contain;
 }
 

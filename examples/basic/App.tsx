@@ -457,10 +457,12 @@ export function App() {
         </div>
       ) : (
         <DocumentViewer
+          controls={{ pageNavigation: true }}
           height="calc(100vh - 204px)"
           onError={(error) => {
             console.error(error);
           }}
+          pdfOptions={{ showThumbnails: true }}
           source={source}
         />
       )}

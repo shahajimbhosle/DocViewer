@@ -4,6 +4,10 @@ export type SpreadsheetCellValue = string | number | boolean | Date | null;
 
 export interface SpreadsheetCellStyle {
   backgroundColor?: string;
+  borderBottom?: string;
+  borderLeft?: string;
+  borderRight?: string;
+  borderTop?: string;
   color?: string;
   direction?: 'ltr' | 'rtl';
   fontSize?: string;
@@ -61,6 +65,8 @@ interface MergeRange {
   endRow: number;
   endColumn: number;
 }
+
+type SpreadsheetBorderProperty = 'borderBottom' | 'borderLeft' | 'borderRight' | 'borderTop';
 
 const builtinDateFormats = new Set([14, 15, 16, 17, 22, 27, 30, 36, 45, 46, 47, 50, 57]);
 
@@ -269,6 +275,54 @@ function ensureCell(rows: ParsedSpreadsheetCell[][], rowIndex: number, columnInd
   return rows[rowIndex][columnIndex];
 }
 
+function firstBorderInRange(
+  rows: ParsedSpreadsheetCell[][],
+  range: MergeRange,
+  borderProperty: SpreadsheetBorderProperty,
+  rowStart: number,
+  rowEnd: number,
+  columnStart: number,
+  columnEnd: number,
+): string | undefined {
+  for (let rowIndex = rowStart; rowIndex <= rowEnd; rowIndex += 1) {
+    for (let columnIndex = columnStart; columnIndex <= columnEnd; columnIndex += 1) {
+      const border = rows[rowIndex]?.[columnIndex]?.style?.[borderProperty];
+
+      if (border) {
+        return border;
+      }
+    }
+  }
+
+  return rows[range.startRow]?.[range.startColumn]?.style?.[borderProperty];
+}
+
+function mergeRangeBorderStyle(rows: ParsedSpreadsheetCell[][], range: MergeRange): SpreadsheetCellStyle | undefined {
+  const borderStyle: SpreadsheetCellStyle = {};
+  const top = firstBorderInRange(rows, range, 'borderTop', range.startRow, range.startRow, range.startColumn, range.endColumn);
+  const right = firstBorderInRange(rows, range, 'borderRight', range.startRow, range.endRow, range.endColumn, range.endColumn);
+  const bottom = firstBorderInRange(rows, range, 'borderBottom', range.endRow, range.endRow, range.startColumn, range.endColumn);
+  const left = firstBorderInRange(rows, range, 'borderLeft', range.startRow, range.endRow, range.startColumn, range.startColumn);
+
+  if (top) {
+    borderStyle.borderTop = top;
+  }
+
+  if (right) {
+    borderStyle.borderRight = right;
+  }
+
+  if (bottom) {
+    borderStyle.borderBottom = bottom;
+  }
+
+  if (left) {
+    borderStyle.borderLeft = left;
+  }
+
+  return Object.keys(borderStyle).length > 0 ? borderStyle : undefined;
+}
+
 function applyMergeRanges(rows: ParsedSpreadsheetCell[][], ranges: MergeRange[]) {
   ranges.forEach((range) => {
     const rowSpan = range.endRow - range.startRow + 1;
@@ -281,6 +335,10 @@ function applyMergeRanges(rows: ParsedSpreadsheetCell[][], ranges: MergeRange[])
     const originCell = ensureCell(rows, range.startRow, range.startColumn);
     originCell.rowSpan = rowSpan;
     originCell.colSpan = colSpan;
+    originCell.style = {
+      ...(originCell.style ?? {}),
+      ...(mergeRangeBorderStyle(rows, range) ?? {}),
+    };
 
     for (let rowIndex = range.startRow; rowIndex <= range.endRow; rowIndex += 1) {
       for (let columnIndex = range.startColumn; columnIndex <= range.endColumn; columnIndex += 1) {
@@ -486,6 +544,72 @@ function parseAlignmentStyle(alignmentNode: Element | undefined): SpreadsheetCel
   return style;
 }
 
+function excelBorderLineStyle(value: string | null): { lineStyle: string; width: string } | undefined {
+  switch (value) {
+    case 'dashDot':
+    case 'dashDotDot':
+    case 'dashed':
+    case 'mediumDashDot':
+    case 'mediumDashDotDot':
+    case 'mediumDashed':
+    case 'slantDashDot':
+      return { lineStyle: 'dashed', width: value.startsWith('medium') ? '2px' : '1px' };
+    case 'dotted':
+    case 'hair':
+      return { lineStyle: 'dotted', width: '1px' };
+    case 'double':
+      return { lineStyle: 'double', width: '3px' };
+    case 'medium':
+      return { lineStyle: 'solid', width: '2px' };
+    case 'thick':
+      return { lineStyle: 'solid', width: '3px' };
+    case 'thin':
+      return { lineStyle: 'solid', width: '1px' };
+    default:
+      return undefined;
+  }
+}
+
+function parseBorderSideStyle(sideNode: Element | undefined, themeColors: string[]): string | undefined {
+  if (!sideNode) {
+    return undefined;
+  }
+
+  const borderLine = excelBorderLineStyle(sideNode.getAttribute('style'));
+  if (!borderLine) {
+    return undefined;
+  }
+
+  const color = colorFromElement(childByLocalName(sideNode, 'color'), themeColors) ?? '#000000';
+  return `${borderLine.width} ${borderLine.lineStyle} ${color}`;
+}
+
+function parseBorderStyle(borderNode: Element, themeColors: string[]): SpreadsheetCellStyle {
+  const style: SpreadsheetCellStyle = {};
+  const left = parseBorderSideStyle(childByLocalName(borderNode, 'left'), themeColors);
+  const right = parseBorderSideStyle(childByLocalName(borderNode, 'right'), themeColors);
+  const top = parseBorderSideStyle(childByLocalName(borderNode, 'top'), themeColors);
+  const bottom = parseBorderSideStyle(childByLocalName(borderNode, 'bottom'), themeColors);
+
+  if (left) {
+    style.borderLeft = left;
+  }
+
+  if (right) {
+    style.borderRight = right;
+  }
+
+  if (top) {
+    style.borderTop = top;
+  }
+
+  if (bottom) {
+    style.borderBottom = bottom;
+  }
+
+  return style;
+}
+
 function parseStyles(stylesXml: string | undefined, themeColors: string[]): ParsedStyle[] {
   if (!stylesXml) {
     return [];
@@ -539,6 +663,12 @@ function parseStyles(stylesXml: string | undefined, themeColors: string[]): Pars
         })
     : [];
 
+  const borderStyles = elementsByLocalName(document, 'borders')[0]
+    ? Array.from(elementsByLocalName(document, 'borders')[0].children)
+        .filter((element) => element.localName === 'border')
+        .map((borderNode) => parseBorderStyle(borderNode, themeColors))
+    : [];
+
   const cellFormats = elementsByLocalName(document, 'cellXfs')[0]
     ? Array.from(elementsByLocalName(document, 'cellXfs')[0].children).filter((element) => element.localName === 'xf')
     : [];
@@ -546,10 +676,12 @@ function parseStyles(stylesXml: string | undefined, themeColors: string[]): Pars
   return cellFormats.map((formatNode) => {
     const fontId = Number(formatNode.getAttribute('fontId') ?? 0);
     const fillId = Number(formatNode.getAttribute('fillId') ?? 0);
+    const borderId = Number(formatNode.getAttribute('borderId') ?? 0);
     const numFmtId = Number(formatNode.getAttribute('numFmtId') ?? 0);
     const style: SpreadsheetCellStyle = {
       ...(fillStyles[fillId] ?? {}),
       ...(fontStyles[fontId] ?? {}),
+      ...(borderStyles[borderId] ?? {}),
       ...parseAlignmentStyle(childByLocalName(formatNode, 'alignment')),
     };
 

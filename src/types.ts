@@ -68,6 +68,7 @@ export interface DocumentRendererProps {
   state: ViewerRuntimeState;
   actions: RendererActions;
   controls: ResolvedDocumentViewerControls;
+  pdfOptions: ResolvedDocumentViewerPdfOptions;
   labels: DocumentViewerLabels;
   viewportRef: RefObject<HTMLDivElement>;
 }
@@ -96,6 +97,12 @@ export interface DocumentViewerControls {
 
 export type ResolvedDocumentViewerControls = Required<DocumentViewerControls>;
 
+export interface DocumentViewerPdfOptions {
+  showThumbnails?: boolean;
+}
+
+export type ResolvedDocumentViewerPdfOptions = Required<DocumentViewerPdfOptions>;
+
 export interface DocumentViewerLabels {
   openFile: string;
   previousPage: string;
@@ -111,6 +118,7 @@ export interface DocumentViewerLabels {
   rotateRight: string;
   search: string;
   print: string;
+  printing: string;
   download: string;
   fullscreen: string;
   exitFullscreen: string;
@@ -134,6 +142,7 @@ export interface DocumentViewerProps {
   initialZoom?: number;
   initialPage?: number;
   controls?: DocumentViewerControls;
+  pdfOptions?: DocumentViewerPdfOptions;
   labels?: Partial<DocumentViewerLabels>;
   emptyState?: ReactNode;
   loader?: ReactNode;

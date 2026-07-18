@@ -7,10 +7,12 @@ import type {
   DocumentRenderer,
   DocumentViewerControls,
   DocumentViewerLabels,
+  DocumentViewerPdfOptions,
   DocumentViewerProps,
   DocumentViewerUserSelect,
   FitMode,
   ResolvedDocumentViewerControls,
+  ResolvedDocumentViewerPdfOptions,
   ResolvedDocument,
   SearchStats,
 } from './types';
@@ -31,6 +33,10 @@ const defaultControls: ResolvedDocumentViewerControls = {
   thumbnails: true,
 };
 
+const defaultPdfOptions: ResolvedDocumentViewerPdfOptions = {
+  showThumbnails: false,
+};
+
 const defaultLabels: DocumentViewerLabels = {
   openFile: 'Open file',
   previousPage: 'Previous page',
@@ -46,6 +52,7 @@ const defaultLabels: DocumentViewerLabels = {
   rotateRight: 'Rotate right',
   search: 'Search',
   print: 'Print',
+  printing: 'Preparing print...',
   download: 'Download',
   fullscreen: 'Fullscreen',
   exitFullscreen: 'Exit fullscreen',
@@ -75,6 +82,10 @@ function clamp(value: number, min: number, max: number): number {
 
 function mergeControls(controls?: DocumentViewerControls): ResolvedDocumentViewerControls {
   return { ...defaultControls, ...controls };
+}
+
+function mergePdfOptions(pdfOptions?: DocumentViewerPdfOptions): ResolvedDocumentViewerPdfOptions {
+  return { ...defaultPdfOptions, ...pdfOptions };
 }
 
 function mergeLabels(labels?: Partial<DocumentViewerLabels>): DocumentViewerLabels {
@@ -172,50 +183,112 @@ function downloadFile(file: ResolvedDocument) {
   anchor.remove();
 }
 
-function printObjectUrl(file: ResolvedDocument) {
-  const frame = document.createElement('iframe');
-  frame.style.position = 'fixed';
-  frame.style.right = '0';
-  frame.style.bottom = '0';
-  frame.style.width = '0';
-  frame.style.height = '0';
-  frame.style.border = '0';
+function printObjectUrl(file: ResolvedDocument): Promise<void> {
+  const frame = createPrintFrame(file.fileName);
+  const printReady = armPrintFrame(frame);
   frame.src = file.objectUrl;
-
-  frame.onload = () => {
-    frame.contentWindow?.focus();
-    frame.contentWindow?.print();
-    window.setTimeout(() => frame.remove(), 1000);
-  };
-
-  document.body.append(frame);
+  return printReady;
 }
 
-function printRenderedElement(element: HTMLElement, title: string) {
-  const printWindow = window.open('', '_blank', 'width=960,height=720');
+function printRenderedElement(element: HTMLElement, title: string): Promise<void> {
+  const frame = createPrintFrame(title);
+  const frameDocument = frame.contentDocument ?? frame.contentWindow?.document;
 
-  if (!printWindow) {
+  if (!frameDocument) {
+    frame.remove();
     window.print();
-    return;
+    return Promise.resolve();
   }
+
+  const printReady = armPrintFrame(frame);
 
   const styles = Array.from(document.querySelectorAll('style,link[rel="stylesheet"]'))
     .map((node) => node.outerHTML)
     .join('\n');
 
-  printWindow.document.write(`<!doctype html>
+  frameDocument.open();
+  frameDocument.write(`<!doctype html>
 <html>
   <head>
     <title>${escapeHtml(title)}</title>
+    <base href="${escapeHtml(document.baseURI)}">
     ${styles}
   </head>
   <body>
     <main class="ldv-print-root">${element.innerHTML}</main>
   </body>
 </html>`);
-  printWindow.document.close();
-  printWindow.focus();
-  window.setTimeout(() => printWindow.print(), 150);
+  frameDocument.close();
+  return printReady;
+}
+
+function createPrintFrame(title: string): HTMLIFrameElement {
+  const frame = document.createElement('iframe');
+  frame.setAttribute('aria-hidden', 'true');
+  frame.title = `Print ${title}`;
+  frame.style.position = 'fixed';
+  frame.style.left = '0';
+  frame.style.top = '0';
+  frame.style.width = '1px';
+  frame.style.height = '1px';
+  frame.style.border = '0';
+  frame.style.opacity = '0';
+  frame.style.pointerEvents = 'none';
+  document.body.append(frame);
+
+  return frame;
+}
+
+function armPrintFrame(frame: HTMLIFrameElement): Promise<void> {
+  let didPrint = false;
+  let didCleanup = false;
+  let fallbackTimer: number | undefined;
+  let cleanupTimer: number | undefined;
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      if (didCleanup) {
+        return;
+      }
+
+      didCleanup = true;
+      if (fallbackTimer) {
+        window.clearTimeout(fallbackTimer);
+      }
+      if (cleanupTimer) {
+        window.clearTimeout(cleanupTimer);
+      }
+      frame.remove();
+    };
+
+    const requestPrint = () => {
+      if (didPrint) {
+        return;
+      }
+
+      const frameWindow = frame.contentWindow;
+      if (!frameWindow) {
+        cleanup();
+        reject(new Error('Unable to create a print frame.'));
+        return;
+      }
+
+      didPrint = true;
+      frameWindow.focus();
+      frameWindow.addEventListener('afterprint', cleanup, { once: true });
+      try {
+        frameWindow.print();
+        resolve();
+        cleanupTimer = window.setTimeout(cleanup, 60_000);
+      } catch (error: unknown) {
+        cleanup();
+        reject(error);
+      }
+    };
+
+    frame.addEventListener('load', () => window.setTimeout(requestPrint, 100), { once: true });
+    fallbackTimer = window.setTimeout(requestPrint, 1_200);
+  });
 }
 
 function DefaultLoader({ label }: { label: string }) {
@@ -242,6 +315,7 @@ export function DocumentViewer({
   initialZoom = 1,
   initialPage = 1,
   controls,
+  pdfOptions,
   labels,
   emptyState,
   loader,
@@ -265,7 +339,9 @@ export function DocumentViewer({
   const [searchStats, setSearchStats] = useState<SearchStats>({});
   const [documentInfo, setDocumentInfoState] = useState<DocumentInfo>({});
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   const mergedControls = useMemo(() => mergeControls(controls), [controls]);
+  const mergedPdfOptions = useMemo(() => mergePdfOptions(pdfOptions), [pdfOptions]);
   const mergedLabels = useMemo(() => mergeLabels(labels), [labels]);
 
   const setPage = useCallback((nextPage: number) => {
@@ -335,6 +411,7 @@ export function DocumentViewer({
     setRotation(0);
     setFitMode('manual');
     setSearchTerm('');
+    setIsPrinting(false);
 
     if (!source) {
       setIsLoading(false);
@@ -475,20 +552,28 @@ export function DocumentViewer({
     }
   }, []);
 
-  const handlePrint = useCallback(() => {
-    if (!resolvedFile) {
+  const handlePrint = useCallback(async () => {
+    if (!resolvedFile || isPrinting) {
       return;
     }
 
-    if (resolvedFile.mimeType === 'application/pdf' || resolvedFile.mimeType.startsWith('image/')) {
-      printObjectUrl(resolvedFile);
-      return;
-    }
+    setIsPrinting(true);
 
-    if (viewportRef.current) {
-      printRenderedElement(viewportRef.current, resolvedFile.fileName);
+    try {
+      if (resolvedFile.mimeType === 'application/pdf' || resolvedFile.mimeType.startsWith('image/')) {
+        await printObjectUrl(resolvedFile);
+        return;
+      }
+
+      if (viewportRef.current) {
+        await printRenderedElement(viewportRef.current, resolvedFile.fileName);
+      }
+    } catch (unknownError: unknown) {
+      reportError(unknownError);
+    } finally {
+      setIsPrinting(false);
     }
-  }, [resolvedFile]);
+  }, [isPrinting, reportError, resolvedFile]);
 
   const handleDownload = useCallback(() => {
     if (resolvedFile) {
@@ -497,6 +582,13 @@ export function DocumentViewer({
   }, [resolvedFile]);
 
   const RendererComponent = selectedRenderer?.Component;
+  const rendererKey = selectedRenderer && resolvedFile
+    ? [
+        selectedRenderer.id,
+        resolvedFile.objectUrl,
+        selectedRenderer.id === 'pdf' ? mergedPdfOptions.showThumbnails : '',
+      ].join(':')
+    : undefined;
   const loadingContent = loader ?? <DefaultLoader label={mergedLabels.loading} />;
   const rootClassName = ['ldv-root', selectedRenderer ? `ldv-renderer-${selectedRenderer.id}` : null, className]
     .filter(Boolean)
@@ -509,6 +601,7 @@ export function DocumentViewer({
           controls={toolbarControls}
           fileName={documentInfo.title || resolvedFile?.fileName}
           isFullscreen={isFullscreen}
+          isPrinting={isPrinting}
           labels={mergedLabels}
           onDownload={handleDownload}
           onFitModeChange={setFitMode}
@@ -541,7 +634,9 @@ export function DocumentViewer({
             actions={rendererActions}
             controls={mergedControls}
             file={resolvedFile}
+            key={rendererKey}
             labels={mergedLabels}
+            pdfOptions={mergedPdfOptions}
             state={runtimeState}
             viewportRef={viewportRef}
           />
