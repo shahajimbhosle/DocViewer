@@ -210,6 +210,10 @@
   padding: 0;
 }
 
+.ldv-renderer-spreadsheet .ldv-viewport {
+  overflow: hidden;
+}
+
 .ldv-renderer-media .ldv-viewport {
   overflow: hidden;
   padding: 0;
@@ -232,6 +236,41 @@
   padding: 28px;
   color: var(--ldv-muted);
   text-align: center;
+}
+
+.ldv-loader {
+  display: flex;
+  width: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 28px;
+  color: var(--ldv-muted);
+  font-weight: 600;
+}
+
+.ldv-loader-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(100, 116, 139, 0.28);
+  border-top-color: var(--ldv-accent);
+  border-radius: 999px;
+  animation: ldv-spin 0.7s linear infinite;
+}
+
+.ldv-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  background: rgba(232, 237, 242, 0.86);
+}
+
+@keyframes ldv-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .ldv-error {
@@ -569,28 +608,135 @@
 }
 
 .ldv-spreadsheet-document {
-  width: max-content;
-  min-width: max-content;
+  display: flex;
+  height: 100%;
+  min-height: 100%;
+  width: 100%;
+  min-width: 100%;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ldv-spreadsheet-grid-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.ldv-spreadsheet-virtual-grid {
+  position: relative;
+  min-width: 100%;
+  background: var(--ldv-panel);
+  color: #1d2733;
+}
+
+.ldv-spreadsheet-virtual-header {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  min-width: 100%;
+  background: #f2f6fa;
+}
+
+.ldv-spreadsheet-virtual-body {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.ldv-spreadsheet-virtual-row {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+}
+
+.ldv-spreadsheet-virtual-corner,
+.ldv-spreadsheet-virtual-column-header,
+.ldv-spreadsheet-virtual-row-header,
+.ldv-spreadsheet-virtual-cell {
+  box-sizing: border-box;
+  border: 1px solid var(--ldv-border);
+}
+
+.ldv-spreadsheet-virtual-corner {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 8;
+  background: #f2f6fa;
+}
+
+.ldv-spreadsheet-virtual-column-header {
+  position: absolute;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f2f6fa;
+  color: #4a5868;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ldv-spreadsheet-virtual-row-header {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f2f6fa;
+  color: #4a5868;
+  font-weight: 700;
+  text-align: center;
+}
+
+.ldv-spreadsheet-virtual-cell {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  padding: 0;
+  background: #ffffff;
+  line-height: 1.18;
+}
+
+.ldv-spreadsheet-virtual-cell.ldv-cell-has-comment {
+  overflow: visible;
 }
 
 .ldv-sheet-tabs {
-  position: sticky;
-  top: 0;
-  z-index: 1;
+  flex: 0 0 38px;
+  z-index: 5;
   display: flex;
+  height: 38px;
+  width: 100%;
+  min-width: 0;
+  align-items: center;
   gap: 4px;
-  padding: 8px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid var(--ldv-border);
   background: #e8edf2;
+  padding: 4px 8px;
+  overscroll-behavior-x: contain;
+  white-space: nowrap;
 }
 
 .ldv-sheet-tab {
   height: 30px;
+  max-width: 180px;
+  flex: 0 0 auto;
   padding: 0 10px;
   border: 1px solid var(--ldv-border);
   border-radius: 6px;
   background: var(--ldv-panel);
   color: var(--ldv-text);
   font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ldv-sheet-tab[aria-selected="true"] {
@@ -627,7 +773,7 @@
   position: relative;
   min-width: 96px;
   max-width: 360px;
-  padding: 0 !important;
+  padding: 0;
   border: 1px solid var(--ldv-border);
   overflow-wrap: anywhere;
   text-align: left;

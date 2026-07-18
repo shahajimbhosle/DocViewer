@@ -10,6 +10,7 @@ function MarkdownRendererComponent({ file, state, actions }: DocumentRendererPro
 
   useEffect(() => {
     let cancelled = false;
+    actions.setLoading(true);
 
     async function renderMarkdown() {
       const text = new TextDecoder('utf-8').decode(file.arrayBuffer);
@@ -25,13 +26,20 @@ function MarkdownRendererComponent({ file, state, actions }: DocumentRendererPro
         setPlainText(htmlToText(cleanHtml));
         actions.setPageCount(undefined);
         actions.setDocumentInfo({ title: file.fileName });
+        actions.setLoading(false);
       }
     }
 
-    renderMarkdown().catch(actions.reportError);
+    renderMarkdown().catch((error: unknown) => {
+      if (!cancelled) {
+        actions.setLoading(false);
+        actions.reportError(error);
+      }
+    });
 
     return () => {
       cancelled = true;
+      actions.setLoading(false);
     };
   }, [actions, file]);
 

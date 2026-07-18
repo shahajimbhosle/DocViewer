@@ -4,6 +4,12 @@ A privacy-first React document viewer that renders files in the browser without 
 
 The package is designed for confidential documents. It accepts `File`, `Blob`, `ArrayBuffer`, `Uint8Array`, `blob:` URLs, and `data:` URLs. `http://` and `https://` document URLs are rejected by default.
 
+## Links
+
+- npm: [@shahajimbhosle/local-doc-viewer](https://www.npmjs.com/package/@shahajimbhosle/local-doc-viewer)
+- GitHub: [shahajimbhosle/DocViewer](https://github.com/shahajimbhosle/DocViewer)
+- Issues: [GitHub issues](https://github.com/shahajimbhosle/DocViewer/issues)
+
 ## Built-In Formats
 
 - PDF, rendered with a bundled PDF.js worker
@@ -12,12 +18,14 @@ The package is designed for confidential documents. It accepts `File`, `Blob`, `
 - Markdown, rendered locally and sanitized
 - CSV/TSV
 - DOCX, rendered locally with Word-style layout and embedded styles where browser rendering permits
-- XLS/XLSX, parsed locally in the browser
+- XLS/XLSX/ODS, parsed locally in the browser
 - PPTX, rendered locally to canvas with slide navigation and text search counts
-- DOCX comments and XLSX notes/comments are shown locally when present
+- DOCX comments and XLSX/ODS notes/comments are shown locally when present
 - Audio/video formats supported by the browser
 
-Legacy binary Word/PowerPoint documents, ODS spreadsheets, strict Office fidelity edge cases, encrypted documents, CAD files, and uncommon enterprise formats need a custom renderer or a private/on-prem conversion service. The viewer exposes a renderer registry for that purpose.
+Spreadsheet previews use row and column virtualization so larger XLS/XLSX/ODS files do not mount every grid cell into the DOM at once.
+
+Legacy binary Word/PowerPoint documents, OpenDocument text/presentation files, strict Office fidelity edge cases, encrypted documents, CAD files, and uncommon enterprise formats need a custom renderer or a private/on-prem conversion service. The viewer exposes a renderer registry for that purpose.
 
 ### About `.ppt`
 
@@ -40,7 +48,7 @@ export function SecurePreview({ file }: { file: File }) {
 }
 ```
 
-Blob sources are supported directly. If the Blob has no reliable `type`, pass a filename or MIME type; otherwise the viewer will sniff common local formats such as PDF, DOCX, XLSX, and PPTX from the bytes.
+Blob sources are supported directly. If the Blob has no reliable `type`, pass a filename or MIME type; otherwise the viewer will sniff common local formats such as PDF, DOCX, XLSX, ODS, and PPTX from the bytes.
 
 ```tsx
 <DocumentViewer source={blob} />
@@ -50,6 +58,19 @@ Blob sources are supported directly. If the Blob has no reliable `type`, pass a 
     blob,
     fileName: 'mid-term-report.xlsx',
   }}
+/>
+```
+
+## Loading State
+
+The viewer shows a compact built-in loader while it is resolving the local file, Blob, buffer, or allowed private URL. Built-in async renderers also use it while preparing heavier formats such as PDF, DOCX, XLSX/ODS, Markdown, and PPTX.
+
+Provide `loader` to replace the default loading UI:
+
+```tsx
+<DocumentViewer
+  loader={<div className="my-loader">Opening secure preview...</div>}
+  source={file}
 />
 ```
 
@@ -133,6 +154,21 @@ Disable controls selectively:
 ```
 
 Every `controls` key is optional. Omitted controls use the default behavior.
+
+## Text Selection
+
+Document text is selectable by default where the browser renderer supports it. Use `userSelect` to control selection inside the document viewport without affecting toolbar controls:
+
+```tsx
+<DocumentViewer source={file} userSelect="none" />
+<DocumentViewer source={file} userSelect="text" />
+```
+
+Boolean shorthand is also supported:
+
+```tsx
+<DocumentViewer source={file} userSelect={false} />
+```
 
 ## Custom Renderers
 

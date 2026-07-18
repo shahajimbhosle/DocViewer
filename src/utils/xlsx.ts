@@ -5,9 +5,16 @@ export type SpreadsheetCellValue = string | number | boolean | Date | null;
 export interface SpreadsheetCellStyle {
   backgroundColor?: string;
   color?: string;
+  direction?: 'ltr' | 'rtl';
+  fontSize?: string;
   fontStyle?: string;
   fontWeight?: string;
+  paddingInlineStart?: string;
+  textAlign?: 'left' | 'center' | 'right' | 'justify';
   textDecoration?: string;
+  verticalAlign?: 'top' | 'middle' | 'bottom';
+  whiteSpace?: 'normal' | 'nowrap' | 'pre-wrap';
+  writingMode?: 'horizontal-tb' | 'vertical-rl';
 }
 
 export interface SpreadsheetComment {
@@ -21,10 +28,15 @@ export interface ParsedSpreadsheetCell {
   value: SpreadsheetCellValue;
   style?: SpreadsheetCellStyle;
   comments?: SpreadsheetComment[];
+  colSpan?: number;
+  hiddenByMerge?: boolean;
+  rowSpan?: number;
 }
 
 export interface ParsedXlsxSheet {
+  columnWidths?: number[];
   name: string;
+  rowHeights?: number[];
   rows: ParsedSpreadsheetCell[][];
 }
 
@@ -35,6 +47,19 @@ export interface ParsedXlsxWorkbook {
 interface ParsedStyle {
   style?: SpreadsheetCellStyle;
   numFmtId?: number;
+}
+
+interface ParsedWorksheetData {
+  columnWidths?: number[];
+  rowHeights?: number[];
+  rows: ParsedSpreadsheetCell[][];
+}
+
+interface MergeRange {
+  startRow: number;
+  startColumn: number;
+  endRow: number;
+  endColumn: number;
 }
 
 const builtinDateFormats = new Set([14, 15, 16, 17, 22, 27, 30, 36, 45, 46, 47, 50, 57]);
@@ -176,6 +201,100 @@ function cellRefToIndexes(cellRef: string): { rowIndex: number; columnIndex: num
   };
 }
 
+function excelColumnWidthToPixels(width: number): number {
+  return Math.max(24, Math.min(640, Math.round(width * 7 + 5)));
+}
+
+function pointsToPixels(points: number): number {
+  return Math.max(1, Math.min(640, Math.round((points * 96) / 72)));
+}
+
+function parseColumnWidths(document: Document): number[] {
+  const widths: number[] = [];
+
+  elementsByLocalName(document, 'col').forEach((columnNode) => {
+    const min = Number(columnNode.getAttribute('min'));
+    const max = Number(columnNode.getAttribute('max'));
+    const width = Number(columnNode.getAttribute('width'));
+
+    if (!Number.isFinite(min) || !Number.isFinite(max) || !Number.isFinite(width)) {
+      return;
+    }
+
+    for (let columnIndex = Math.max(0, min - 1); columnIndex <= max - 1; columnIndex += 1) {
+      widths[columnIndex] = excelColumnWidthToPixels(width);
+    }
+  });
+
+  return widths;
+}
+
+function parseRowHeights(document: Document): number[] {
+  const heights: number[] = [];
+
+  elementsByLocalName(document, 'row').forEach((rowNode, index) => {
+    const rowNumber = Number(rowNode.getAttribute('r') ?? index + 1);
+    const height = Number(rowNode.getAttribute('ht'));
+
+    if (!Number.isFinite(rowNumber) || !Number.isFinite(height)) {
+      return;
+    }
+
+    heights[Math.max(0, rowNumber - 1)] = pointsToPixels(height);
+  });
+
+  return heights;
+}
+
+function parseMergeRange(ref: string): MergeRange | null {
+  const [startRef, endRef] = ref.split(':');
+  const start = cellRefToIndexes(startRef ?? '');
+  const end = cellRefToIndexes(endRef ?? startRef ?? '');
+
+  if (!start || !end) {
+    return null;
+  }
+
+  return {
+    startRow: Math.min(start.rowIndex, end.rowIndex),
+    startColumn: Math.min(start.columnIndex, end.columnIndex),
+    endRow: Math.max(start.rowIndex, end.rowIndex),
+    endColumn: Math.max(start.columnIndex, end.columnIndex),
+  };
+}
+
+function ensureCell(rows: ParsedSpreadsheetCell[][], rowIndex: number, columnIndex: number): ParsedSpreadsheetCell {
+  rows[rowIndex] ??= [];
+  rows[rowIndex][columnIndex] ??= { value: null };
+  return rows[rowIndex][columnIndex];
+}
+
+function applyMergeRanges(rows: ParsedSpreadsheetCell[][], ranges: MergeRange[]) {
+  ranges.forEach((range) => {
+    const rowSpan = range.endRow - range.startRow + 1;
+    const colSpan = range.endColumn - range.startColumn + 1;
+
+    if (rowSpan <= 1 && colSpan <= 1) {
+      return;
+    }
+
+    const originCell = ensureCell(rows, range.startRow, range.startColumn);
+    originCell.rowSpan = rowSpan;
+    originCell.colSpan = colSpan;
+
+    for (let rowIndex = range.startRow; rowIndex <= range.endRow; rowIndex += 1) {
+      for (let columnIndex = range.startColumn; columnIndex <= range.endColumn; columnIndex += 1) {
+        if (rowIndex === range.startRow && columnIndex === range.startColumn) {
+          continue;
+        }
+
+        const mergedCell = ensureCell(rows, rowIndex, columnIndex);
+        mergedCell.hiddenByMerge = true;
+      }
+    }
+  });
+}
+
 function normalizeHexColor(value: string): string | undefined {
   const clean = value.replace(/[^a-f0-9]/gi, '').toUpperCase();
 
@@ -312,6 +431,61 @@ function excelSerialDate(value: number, date1904: boolean): Date {
   return new Date(epoch + value * 86_400_000);
 }
 
+function booleanAttribute(value: string | null): boolean {
+  return value === '1' || value === 'true';
+}
+
+function parseAlignmentStyle(alignmentNode: Element | undefined): SpreadsheetCellStyle {
+  if (!alignmentNode) {
+    return {};
+  }
+
+  const style: SpreadsheetCellStyle = {};
+  const horizontal = alignmentNode.getAttribute('horizontal');
+  const vertical = alignmentNode.getAttribute('vertical');
+  const indent = Number(alignmentNode.getAttribute('indent') ?? 0);
+  const textRotation = alignmentNode.getAttribute('textRotation');
+  const readingOrder = alignmentNode.getAttribute('readingOrder');
+
+  if (horizontal === 'center' || horizontal === 'centerContinuous') {
+    style.textAlign = 'center';
+  } else if (horizontal === 'right') {
+    style.textAlign = 'right';
+  } else if (horizontal === 'justify' || horizontal === 'distributed') {
+    style.textAlign = 'justify';
+  } else if (horizontal === 'left') {
+    style.textAlign = 'left';
+  }
+
+  if (vertical === 'center') {
+    style.verticalAlign = 'middle';
+  } else if (vertical === 'bottom') {
+    style.verticalAlign = 'bottom';
+  } else if (vertical === 'top') {
+    style.verticalAlign = 'top';
+  }
+
+  if (alignmentNode.hasAttribute('wrapText')) {
+    style.whiteSpace = booleanAttribute(alignmentNode.getAttribute('wrapText')) ? 'pre-wrap' : 'nowrap';
+  }
+
+  if (Number.isFinite(indent) && indent > 0) {
+    style.paddingInlineStart = `${Math.min(indent * 12, 120)}px`;
+  }
+
+  if (textRotation === '255') {
+    style.writingMode = 'vertical-rl';
+  }
+
+  if (readingOrder === '1') {
+    style.direction = 'ltr';
+  } else if (readingOrder === '2') {
+    style.direction = 'rtl';
+  }
+
+  return style;
+}
+
 function parseStyles(stylesXml: string | undefined, themeColors: string[]): ParsedStyle[] {
   if (!stylesXml) {
     return [];
@@ -376,6 +550,7 @@ function parseStyles(stylesXml: string | undefined, themeColors: string[]): Pars
     const style: SpreadsheetCellStyle = {
       ...(fillStyles[fillId] ?? {}),
       ...(fontStyles[fontId] ?? {}),
+      ...parseAlignmentStyle(childByLocalName(formatNode, 'alignment')),
     };
 
     return {
@@ -611,9 +786,12 @@ function parseWorksheet(
   numberFormats: Map<number, string>,
   date1904: boolean,
   commentsByRef: Map<string, SpreadsheetComment[]>,
-): ParsedSpreadsheetCell[][] {
+): ParsedWorksheetData {
   const document = parseXml(worksheetXml);
   const rows: ParsedSpreadsheetCell[][] = [];
+  const mergeRanges = elementsByLocalName(document, 'mergeCell')
+    .map((mergeNode) => parseMergeRange(mergeNode.getAttribute('ref') ?? ''))
+    .filter((range): range is MergeRange => Boolean(range));
 
   elementsByLocalName(document, 'c').forEach((cell) => {
     const ref = cell.getAttribute('r');
@@ -644,7 +822,13 @@ function parseWorksheet(
     }
   });
 
-  return rows;
+  applyMergeRanges(rows, mergeRanges);
+
+  return {
+    columnWidths: parseColumnWidths(document),
+    rowHeights: parseRowHeights(document),
+    rows,
+  };
 }
 
 export async function parseXlsxWorkbook(arrayBuffer: ArrayBuffer): Promise<ParsedXlsxWorkbook> {
@@ -685,17 +869,20 @@ export async function parseXlsxWorkbook(arrayBuffer: ArrayBuffer): Promise<Parse
         const threadedComments = await Promise.all(
           threadedRelationships.map(async (relationship) => parseThreadedComments(await readText(relationship.target), persons)),
         );
+        const worksheet = parseWorksheet(
+          (await readText(sheet.path)) ?? '',
+          sharedStrings,
+          styles,
+          numberFormats,
+          date1904,
+          mergeCommentMaps(...noteComments, ...threadedComments),
+        );
 
         return {
+          columnWidths: worksheet.columnWidths,
           name: sheet.name,
-          rows: parseWorksheet(
-            (await readText(sheet.path)) ?? '',
-            sharedStrings,
-            styles,
-            numberFormats,
-            date1904,
-            mergeCommentMaps(...noteComments, ...threadedComments),
-          ),
+          rowHeights: worksheet.rowHeights,
+          rows: worksheet.rows,
         };
       }),
     ),

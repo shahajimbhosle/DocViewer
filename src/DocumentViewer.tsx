@@ -8,6 +8,7 @@ import type {
   DocumentViewerControls,
   DocumentViewerLabels,
   DocumentViewerProps,
+  DocumentViewerUserSelect,
   FitMode,
   ResolvedDocumentViewerControls,
   ResolvedDocument,
@@ -78,6 +79,14 @@ function mergeControls(controls?: DocumentViewerControls): ResolvedDocumentViewe
 
 function mergeLabels(labels?: Partial<DocumentViewerLabels>): DocumentViewerLabels {
   return { ...defaultLabels, ...labels };
+}
+
+function resolveUserSelect(userSelect?: DocumentViewerUserSelect): CSSProperties['userSelect'] | undefined {
+  if (typeof userSelect === 'boolean') {
+    return userSelect ? 'text' : 'none';
+  }
+
+  return userSelect;
 }
 
 function controlsForRenderer(
@@ -209,6 +218,15 @@ function printRenderedElement(element: HTMLElement, title: string) {
   window.setTimeout(() => printWindow.print(), 150);
 }
 
+function DefaultLoader({ label }: { label: string }) {
+  return (
+    <div aria-live="polite" className="ldv-loader" role="status">
+      <span className="ldv-loader-spinner" aria-hidden="true" />
+      <span>{label}</span>
+    </div>
+  );
+}
+
 export function DocumentViewer({
   source,
   fileName,
@@ -226,6 +244,8 @@ export function DocumentViewer({
   controls,
   labels,
   emptyState,
+  loader,
+  userSelect,
   onLoad,
   onError,
 }: DocumentViewerProps) {
@@ -235,6 +255,7 @@ export function DocumentViewer({
   const [resolvedFile, setResolvedFile] = useState<ResolvedDocument | null>(null);
   const [error, setError] = useState<Error | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRendererLoading, setIsRendererLoading] = useState(false);
   const [page, setPageState] = useState(Math.max(1, initialPage));
   const [pageCount, setPageCountState] = useState<number | undefined>();
   const [zoom, setZoom] = useState(clamp(initialZoom, minZoom, maxZoom));
@@ -272,6 +293,7 @@ export function DocumentViewer({
   const reportError = useCallback(
     (unknownError: unknown) => {
       const nextError = toError(unknownError);
+      setIsRendererLoading(false);
       setError(nextError);
       onError?.(nextError);
     },
@@ -283,6 +305,7 @@ export function DocumentViewer({
       setPage,
       setPageCount,
       setDocumentInfo,
+      setLoading: setIsRendererLoading,
       setSearchStats,
       reportError,
     }),
@@ -302,6 +325,7 @@ export function DocumentViewer({
     let cancelled = false;
 
     setError(null);
+    setIsRendererLoading(false);
     setResolvedFile(null);
     setPageCount(undefined);
     setSearchStats({});
@@ -418,6 +442,11 @@ export function DocumentViewer({
     }),
     [height, style],
   );
+  const viewportStyle = useMemo<CSSProperties | undefined>(() => {
+    const resolvedUserSelect = resolveUserSelect(userSelect);
+
+    return resolvedUserSelect ? { userSelect: resolvedUserSelect } : undefined;
+  }, [userSelect]);
 
   const handleZoomOut = useCallback(() => {
     setFitMode('manual');
@@ -468,6 +497,7 @@ export function DocumentViewer({
   }, [resolvedFile]);
 
   const RendererComponent = selectedRenderer?.Component;
+  const loadingContent = loader ?? <DefaultLoader label={mergedLabels.loading} />;
   const rootClassName = ['ldv-root', selectedRenderer ? `ldv-renderer-${selectedRenderer.id}` : null, className]
     .filter(Boolean)
     .join(' ');
@@ -496,11 +526,11 @@ export function DocumentViewer({
         />
       ) : null}
 
-      <div className="ldv-viewport" ref={viewportRef}>
+      <div className="ldv-viewport" ref={viewportRef} style={viewportStyle}>
         {!source ? (
           emptyState ?? <div className="ldv-empty-state">{mergedLabels.noDocument}</div>
         ) : isLoading ? (
-          <div className="ldv-renderer-status">{mergedLabels.loading}</div>
+          loadingContent
         ) : error ? (
           <div className="ldv-error" role="alert">
             <strong>Unable to render document</strong>
@@ -516,6 +546,7 @@ export function DocumentViewer({
             viewportRef={viewportRef}
           />
         ) : null}
+        {!isLoading && isRendererLoading && !error ? <div className="ldv-loading-overlay">{loadingContent}</div> : null}
       </div>
     </section>
   );

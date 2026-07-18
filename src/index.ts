@@ -10,6 +10,7 @@ export type {
   DocumentViewerControls,
   DocumentViewerLabels,
   DocumentViewerProps,
+  DocumentViewerUserSelect,
   FitMode,
   RendererActions,
   ResolvedDocument,

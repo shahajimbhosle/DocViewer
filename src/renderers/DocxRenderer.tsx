@@ -164,6 +164,7 @@ function DocxRendererComponent({ file, state, actions }: DocumentRendererProps) 
     activeStyleContainer.replaceChildren();
     setPlainText('');
     setWarnings([]);
+    actions.setLoading(true);
 
     async function renderDocx() {
       await renderAsync(file.arrayBuffer.slice(0), activeBodyContainer, activeStyleContainer, {
@@ -204,16 +205,19 @@ function DocxRendererComponent({ file, state, actions }: DocumentRendererProps) 
         pageCount: nextPageCount,
         warnings: nextWarnings,
       });
+      actions.setLoading(false);
     }
 
     renderDocx().catch((error: unknown) => {
       if (!cancelled) {
+        actions.setLoading(false);
         actions.reportError(error);
       }
     });
 
     return () => {
       cancelled = true;
+      actions.setLoading(false);
       activeBodyContainer.replaceChildren();
       activeStyleContainer.replaceChildren();
     };

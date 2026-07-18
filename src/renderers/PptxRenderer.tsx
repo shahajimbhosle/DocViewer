@@ -324,6 +324,7 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
 
     viewerRef.current = viewer;
     setIsLoading(true);
+    actions.setLoading(true);
     setIsRendering(false);
     setPresentationBuffer(null);
     setSlideCount(0);
@@ -355,6 +356,7 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
       setSlideTexts(prepared.slideTexts);
       setWarnings(nextWarnings);
       setIsLoading(false);
+      actions.setLoading(false);
       actions.setPageCount(slideCount || undefined);
       actions.setDocumentInfo({
         title: file.fileName,
@@ -366,12 +368,14 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
     loadPresentation().catch((error: unknown) => {
       if (!cancelled) {
         setIsLoading(false);
+        actions.setLoading(false);
         actions.reportError(error);
       }
     });
 
     return () => {
       cancelled = true;
+      actions.setLoading(false);
       viewer.destroy();
       thumbnailViewerRef.current?.destroy();
       if (viewerRef.current === viewer) {

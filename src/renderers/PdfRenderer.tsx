@@ -97,7 +97,9 @@ function isPdfCancellationError(error: unknown): boolean {
     name === 'AbortException' ||
     message.includes('Worker was destroyed') ||
     message.includes('Loading task destroyed') ||
-    message.includes('worker has been destroyed')
+    message.includes('worker has been destroyed') ||
+    message.includes("reading 'getPage'") ||
+    message.includes('reading "getPage"')
   );
 }
 
@@ -124,9 +126,24 @@ function PdfPageCanvas({ pdf, pageNumber, zoom, rotation, fitMode, viewportRef, 
   useEffect(() => {
     let cancelled = false;
     let loadedPage: PdfPage | null = null;
+    let pagePromise: Promise<PdfPage>;
 
-    pdf
-      .getPage(pageNumber)
+    setPage(null);
+    setBaseSize(null);
+
+    try {
+      pagePromise = pdf.getPage(pageNumber);
+    } catch (error: unknown) {
+      if (!isPdfCancellationError(error)) {
+        onError(error);
+      }
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    pagePromise
       .then((nextPage) => {
         if (cancelled) {
           nextPage.cleanup();
@@ -162,21 +179,32 @@ function PdfPageCanvas({ pdf, pageNumber, zoom, rotation, fitMode, viewportRef, 
       return undefined;
     }
 
-    const viewport = page.getViewport({ scale: effectiveScale, rotation });
-    const outputScale = window.devicePixelRatio || 1;
-
-    canvas.width = Math.floor(viewport.width * outputScale);
-    canvas.height = Math.floor(viewport.height * outputScale);
-    canvas.style.width = `${viewport.width}px`;
-    canvas.style.height = `${viewport.height}px`;
-
-    const renderTask = page.render({
-      canvasContext: context,
-      viewport,
-      transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
-    });
-
     let cancelledRender = false;
+    let renderTask: ReturnType<PdfPage['render']>;
+
+    try {
+      const viewport = page.getViewport({ scale: effectiveScale, rotation });
+      const outputScale = window.devicePixelRatio || 1;
+
+      canvas.width = Math.floor(viewport.width * outputScale);
+      canvas.height = Math.floor(viewport.height * outputScale);
+      canvas.style.width = `${viewport.width}px`;
+      canvas.style.height = `${viewport.height}px`;
+
+      renderTask = page.render({
+        canvasContext: context,
+        viewport,
+        transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : undefined,
+      });
+    } catch (error: unknown) {
+      if (!isPdfCancellationError(error)) {
+        onError(error);
+      }
+
+      return () => {
+        cancelledRender = true;
+      };
+    }
 
     renderTask.promise.catch((error: unknown) => {
       if (!cancelledRender && !isPdfCancellationError(error)) {
@@ -204,6 +232,7 @@ function PdfRendererComponent({ file, state, actions, viewportRef }: DocumentRen
     let loadingTask: PdfLoadingTask | null = null;
 
     setIsLoading(true);
+    actions.setLoading(true);
     setPdf(null);
     setPageSearchCounts([]);
 
@@ -231,6 +260,7 @@ function PdfRendererComponent({ file, state, actions, viewportRef }: DocumentRen
           loadedDocument = document;
           setPdf(document);
           setIsLoading(false);
+          actions.setLoading(false);
           actions.setPageCount(document.numPages);
           actions.setDocumentInfo({
             title: file.fileName,
@@ -240,6 +270,7 @@ function PdfRendererComponent({ file, state, actions, viewportRef }: DocumentRen
         .catch((error: unknown) => {
           if (!cancelled && !isPdfCancellationError(error)) {
             setIsLoading(false);
+            actions.setLoading(false);
             actions.reportError(error);
           }
         });
@@ -248,12 +279,14 @@ function PdfRendererComponent({ file, state, actions, viewportRef }: DocumentRen
     loadPdf().catch((error: unknown) => {
       if (!cancelled && !isPdfCancellationError(error)) {
         setIsLoading(false);
+        actions.setLoading(false);
         actions.reportError(error);
       }
     });
 
     return () => {
       cancelled = true;
+      actions.setLoading(false);
       loadingTask?.destroy();
       loadedDocument?.destroy();
     };
@@ -280,7 +313,18 @@ function PdfRendererComponent({ file, state, actions, viewportRef }: DocumentRen
           return;
         }
 
-        const page = await activePdf.getPage(pageNumber);
+        let page: PdfPage;
+
+        try {
+          page = await activePdf.getPage(pageNumber);
+        } catch (error: unknown) {
+          if (cancelled || isPdfCancellationError(error)) {
+            return;
+          }
+
+          throw error;
+        }
+
         const textContent = await page.getTextContent();
         const text = textContent.items.map(textItemToString).join(' ');
         const matches = countMatches(text, query);

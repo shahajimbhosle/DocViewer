@@ -1,6 +1,7 @@
 import type { ComponentType, CSSProperties, ReactNode, RefObject } from 'react';
 
 export type BinaryDocumentData = ArrayBuffer | Uint8Array;
+export type DocumentViewerUserSelect = CSSProperties['userSelect'] | boolean;
 
 export type DocumentSource =
   | File
@@ -57,6 +58,7 @@ export interface RendererActions {
   setPage: (page: number) => void;
   setPageCount: (pageCount?: number) => void;
   setDocumentInfo: (info: Partial<DocumentInfo>) => void;
+  setLoading: (isLoading: boolean) => void;
   setSearchStats: (stats: SearchStats) => void;
   reportError: (error: unknown) => void;
 }
@@ -134,6 +136,8 @@ export interface DocumentViewerProps {
   controls?: DocumentViewerControls;
   labels?: Partial<DocumentViewerLabels>;
   emptyState?: ReactNode;
+  loader?: ReactNode;
+  userSelect?: DocumentViewerUserSelect;
   onLoad?: (info: DocumentInfo, file: ResolvedDocument) => void;
   onError?: (error: Error) => void;
 }
