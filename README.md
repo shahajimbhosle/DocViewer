@@ -8,6 +8,7 @@ The package is designed for confidential documents. It accepts `File`, `Blob`, `
 
 - npm: [@shahajimbhosle/local-doc-viewer](https://www.npmjs.com/package/@shahajimbhosle/local-doc-viewer)
 - GitHub: [shahajimbhosle/DocViewer](https://github.com/shahajimbhosle/DocViewer)
+- Example: [GitHub Pages demo](https://shahajimbhosle.github.io/DocViewer/)
 - Issues: [GitHub issues](https://github.com/shahajimbhosle/DocViewer/issues)
 
 ## Built-In Formats
@@ -237,6 +238,19 @@ Build the package:
 
 ```bash
 npm run build
+```
+
+Build the GitHub Pages example:
+
+```bash
+npm run build:pages
+npm run preview:pages
+```
+
+The example site is built from `examples/basic` into `dist-pages` and is deployed by `.github/workflows/pages.yml`. In GitHub, open the repository settings and set **Pages > Build and deployment > Source** to **GitHub Actions**. After that, every push to `main` deploys the example to:
+
+```text
+https://shahajimbhosle.github.io/DocViewer/
 ```
 
 ## License

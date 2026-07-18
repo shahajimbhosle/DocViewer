@@ -7,39 +7,54 @@ import { defineConfig } from 'vite';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
-export default defineConfig({
-  plugins: [
-    react(),
-    dts({
-      insertTypesEntry: true,
-      tsconfigPath: './tsconfig.build.json',
-    }),
-    {
-      name: 'copy-pdf-worker',
-      closeBundle() {
-        const source = resolve(projectRoot, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
-        const target = resolve(projectRoot, 'dist/pdf.worker.min.mjs');
+export default defineConfig(({ mode }) => {
+  const isPagesBuild = mode === 'pages';
+  const githubRepositoryName = process.env.GITHUB_REPOSITORY?.split('/')[1];
+  const pagesBase =
+    process.env.VITE_BASE_PATH ??
+    (githubRepositoryName ? `/${githubRepositoryName}/` : '/DocViewer/');
 
-        mkdirSync(dirname(target), { recursive: true });
-        copyFileSync(source, target);
-      },
-    },
-  ],
-  build: {
-    lib: {
-      entry: 'src/index.ts',
-      name: 'LocalDocumentViewer',
-      fileName: 'index',
-    },
-    rollupOptions: {
-      external: ['react', 'react-dom', 'react/jsx-runtime'],
-      output: {
-        globals: {
-          react: 'React',
-          'react-dom': 'ReactDOM',
-          'react/jsx-runtime': 'ReactJSXRuntime',
+  return {
+    base: isPagesBuild ? pagesBase : '/',
+    plugins: [
+      react(),
+      !isPagesBuild &&
+        dts({
+          insertTypesEntry: true,
+          tsconfigPath: './tsconfig.build.json',
+        }),
+      !isPagesBuild && {
+        name: 'copy-pdf-worker',
+        closeBundle() {
+          const source = resolve(projectRoot, 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs');
+          const target = resolve(projectRoot, 'dist/pdf.worker.min.mjs');
+
+          mkdirSync(dirname(target), { recursive: true });
+          copyFileSync(source, target);
         },
       },
-    },
-  },
+    ].filter(Boolean),
+    build: isPagesBuild
+      ? {
+          outDir: 'dist-pages',
+          emptyOutDir: true,
+        }
+      : {
+          lib: {
+            entry: 'src/index.ts',
+            name: 'LocalDocumentViewer',
+            fileName: 'index',
+          },
+          rollupOptions: {
+            external: ['react', 'react-dom', 'react/jsx-runtime'],
+            output: {
+              globals: {
+                react: 'React',
+                'react-dom': 'ReactDOM',
+                'react/jsx-runtime': 'ReactJSXRuntime',
+              },
+            },
+          },
+        },
+  };
 });
