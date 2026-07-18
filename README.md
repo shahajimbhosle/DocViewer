@@ -124,6 +124,22 @@ configurePdfWorker(pdfWorkerUrl);
 
 The worker is intentionally not embedded as an inline base64 JavaScript data URL in the library bundle, because large inline executable payloads can trigger package malware scanners even when the code comes from PDF.js.
 
+### Password-Protected PDFs
+
+Encrypted PDFs prompt for a password inside the viewer. The password is passed directly to PDF.js in the browser and is not uploaded or sent to any preview service.
+
+Prompt labels can be customized through `labels`:
+
+```tsx
+<DocumentViewer
+  labels={{
+    pdfPasswordTitle: 'Protected PDF',
+    pdfPasswordSubmit: 'Unlock',
+  }}
+  source={file}
+/>
+```
+
 ## Controls
 
 The default control surface includes:

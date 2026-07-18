@@ -285,6 +285,81 @@
   background: rgba(232, 237, 242, 0.86);
 }
 
+.ldv-pdf-password {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 24px;
+}
+
+.ldv-pdf-password-panel {
+  display: grid;
+  width: min(360px, 100%);
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid var(--ldv-border);
+  border-radius: 8px;
+  background: var(--ldv-panel);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+}
+
+.ldv-pdf-password-panel h2 {
+  margin: 0;
+  color: var(--ldv-text);
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.ldv-pdf-password-panel p {
+  margin: 0;
+  color: var(--ldv-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ldv-pdf-password-field {
+  display: grid;
+  gap: 6px;
+  color: var(--ldv-text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.ldv-pdf-password-field input {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--ldv-border);
+  border-radius: 6px;
+  color: var(--ldv-text);
+  font: inherit;
+}
+
+.ldv-pdf-password-field input:focus-visible {
+  outline: 2px solid var(--ldv-accent);
+  outline-offset: 2px;
+}
+
+.ldv-pdf-password-submit {
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  justify-self: start;
+  padding: 0 14px;
+  border: 1px solid var(--ldv-accent);
+  border-radius: 6px;
+  background: var(--ldv-accent);
+  color: #ffffff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ldv-pdf-password-submit:hover {
+  background: #0b665f;
+}
+
 @keyframes ldv-spin {
   to {
     transform: rotate(360deg);

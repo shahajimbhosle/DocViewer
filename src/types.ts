@@ -125,6 +125,12 @@ export interface DocumentViewerLabels {
   unsupportedTitle: string;
   noDocument: string;
   loading: string;
+  pdfPasswordTitle: string;
+  pdfPasswordDescription: string;
+  pdfPasswordInputLabel: string;
+  pdfPasswordSubmit: string;
+  pdfPasswordRequired: string;
+  pdfPasswordIncorrect: string;
 }
 
 export interface DocumentViewerProps {

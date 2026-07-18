@@ -2,7 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import * as pdfjs from 'pdfjs-dist';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import type { FormEvent, RefObject } from 'react';
 import type { DocumentRenderer, DocumentRendererProps, FitMode } from '../types';
 import { countMatches, findMatchRanges } from '../utils/highlight';
 
@@ -46,6 +46,13 @@ interface PdfTextItem {
   transform: number[];
   width: number;
   height: number;
+}
+
+type PdfPasswordUpdate = (password: string | Error) => void;
+
+interface PdfPasswordPromptState {
+  reason: number;
+  updatePassword: PdfPasswordUpdate;
 }
 
 const pdfThumbnailWidth = 92;
@@ -460,11 +467,15 @@ function PdfThumbnailCanvas({ pdf, pageNumber, rotation }: PdfThumbnailCanvasPro
   );
 }
 
-function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: DocumentRendererProps) {
+function PdfRendererComponent({ file, state, actions, controls, pdfOptions, labels }: DocumentRendererProps) {
   const [pdf, setPdf] = useState<PdfDocument | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [passwordPrompt, setPasswordPrompt] = useState<PdfPasswordPromptState | null>(null);
+  const [passwordValue, setPasswordValue] = useState('');
+  const [passwordValidationError, setPasswordValidationError] = useState('');
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [pageSearchCounts, setPageSearchCounts] = useState<number[]>([]);
+  const passwordInputRef = useRef<HTMLInputElement>(null);
   const mainPaneRef = useRef<HTMLDivElement>(null);
   const thumbnailListRef = useRef<HTMLDivElement>(null);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -478,6 +489,9 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
     setIsLoading(true);
     actions.setLoading(true);
     setPdf(null);
+    setPasswordPrompt(null);
+    setPasswordValue('');
+    setPasswordValidationError('');
     setPageSearchCounts([]);
     pageRefs.current = [];
 
@@ -494,6 +508,18 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
         isEvalSupported: false,
       });
       loadingTask = nextLoadingTask;
+      nextLoadingTask.onPassword = (updatePassword: PdfPasswordUpdate, reason: number) => {
+        if (cancelled) {
+          updatePassword(new Error('PDF loading was cancelled.'));
+          return;
+        }
+
+        setIsLoading(false);
+        actions.setLoading(false);
+        setPasswordValue('');
+        setPasswordValidationError('');
+        setPasswordPrompt({ reason, updatePassword });
+      };
 
       nextLoadingTask.promise
         .then((document) => {
@@ -503,6 +529,9 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
           }
 
           loadedDocument = document;
+          setPasswordPrompt(null);
+          setPasswordValue('');
+          setPasswordValidationError('');
           setPdf(document);
           setIsLoading(false);
           actions.setLoading(false);
@@ -516,6 +545,7 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
           if (!cancelled && !isPdfCancellationError(error)) {
             setIsLoading(false);
             actions.setLoading(false);
+            setPasswordPrompt(null);
             actions.reportError(error);
           }
         });
@@ -525,6 +555,7 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
       if (!cancelled && !isPdfCancellationError(error)) {
         setIsLoading(false);
         actions.setLoading(false);
+        setPasswordPrompt(null);
         actions.reportError(error);
       }
     });
@@ -536,6 +567,33 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
       loadedDocument?.destroy();
     };
   }, [actions, file]);
+
+  useEffect(() => {
+    if (passwordPrompt) {
+      passwordInputRef.current?.focus();
+    }
+  }, [passwordPrompt]);
+
+  const handlePasswordSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!passwordPrompt) {
+      return;
+    }
+
+    if (passwordValue.length === 0) {
+      setPasswordValidationError(labels.pdfPasswordRequired);
+      return;
+    }
+
+    const nextPassword = passwordValue;
+    setPasswordPrompt(null);
+    setPasswordValue('');
+    setPasswordValidationError('');
+    setIsLoading(true);
+    actions.setLoading(true);
+    passwordPrompt.updatePassword(nextPassword);
+  };
 
   useEffect(() => {
     if (!pdf || !state.searchTerm.trim()) {
@@ -718,6 +776,40 @@ function PdfRendererComponent({ file, state, actions, controls, pdfOptions }: Do
 
     thumbnailVirtualizer.scrollToIndex(state.page - 1, { align: 'auto' });
   }, [hasThumbnailSidebar, isSidebarCollapsed, state.page, thumbnailVirtualizer]);
+
+  if (passwordPrompt) {
+    const message =
+      passwordValidationError ||
+      (passwordPrompt.reason === pdfjs.PasswordResponses.INCORRECT_PASSWORD
+        ? labels.pdfPasswordIncorrect
+        : labels.pdfPasswordDescription);
+
+    return (
+      <form className="ldv-pdf-password" onSubmit={handlePasswordSubmit}>
+        <div className="ldv-pdf-password-panel">
+          <h2>{labels.pdfPasswordTitle}</h2>
+          <p id="ldv-pdf-password-message">{message}</p>
+          <label className="ldv-pdf-password-field">
+            <span>{labels.pdfPasswordInputLabel}</span>
+            <input
+              aria-describedby="ldv-pdf-password-message"
+              autoComplete="current-password"
+              onChange={(event) => {
+                setPasswordValue(event.target.value);
+                setPasswordValidationError('');
+              }}
+              ref={passwordInputRef}
+              type="password"
+              value={passwordValue}
+            />
+          </label>
+          <button className="ldv-pdf-password-submit" type="submit">
+            {labels.pdfPasswordSubmit}
+          </button>
+        </div>
+      </form>
+    );
+  }
 
   if (isLoading || !pdf) {
     return <div className="ldv-renderer-status">Loading PDF...</div>;

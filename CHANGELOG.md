@@ -4,6 +4,12 @@ All notable changes to `@shahajimbhosle/local-doc-viewer` will be documented in 
 
 This project follows semantic versioning. Dates use `YYYY-MM-DD`.
 
+## [1.0.6] - 2026-07-18
+
+### Added
+
+- Added an inline password prompt for encrypted PDF files. Passwords are passed directly to PDF.js in the browser and are not uploaded.
+
 ## [1.0.5] - 2026-07-18
 
 ### Added

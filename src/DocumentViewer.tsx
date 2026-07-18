@@ -59,6 +59,12 @@ const defaultLabels: DocumentViewerLabels = {
   unsupportedTitle: 'Preview unavailable',
   noDocument: 'No document selected',
   loading: 'Loading document...',
+  pdfPasswordTitle: 'Password required',
+  pdfPasswordDescription: 'Enter the password to open this PDF.',
+  pdfPasswordInputLabel: 'PDF password',
+  pdfPasswordSubmit: 'Open PDF',
+  pdfPasswordRequired: 'Enter a password to continue.',
+  pdfPasswordIncorrect: 'The password is incorrect. Try again.',
 };
 
 type ControlName = keyof ResolvedDocumentViewerControls;
