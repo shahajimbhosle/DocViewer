@@ -1,3 +1,4 @@
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { PPTXViewer } from 'pptxviewjs';
 import JSZip from 'jszip';
@@ -12,7 +13,8 @@ const defaultSlideSize = {
   width: 960,
   height: 720,
 };
-const thumbnailWidth = 112;
+const thumbnailWidth = 96;
+const thumbnailEstimatedHeight = 96;
 
 interface Size {
   width: number;
@@ -27,7 +29,16 @@ interface PptxSlideSize {
 interface PreparedPptx {
   arrayBuffer: ArrayBuffer;
   slideTexts: string[];
+  slideSearchBoxes: PptxSearchBox[][];
   warnings: string[];
+}
+
+interface PptxSearchBox {
+  text: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 type PptxViewerWithInternals = PPTXViewer & {
@@ -72,6 +83,28 @@ function isNetworkReference(value: string): boolean {
 
 function serializeXml(document: Document): string {
   return new XMLSerializer().serializeToString(document);
+}
+
+function childByLocalName(element: Element, localName: string): Element | null {
+  return Array.from(element.children).find((child) => child.localName === localName) ?? null;
+}
+
+function descendantsByLocalName(element: Element | Document, localName: string): Element[] {
+  return Array.from(element.getElementsByTagName('*')).filter((node) => node.localName === localName);
+}
+
+function firstDescendantByLocalName(element: Element, localName: string): Element | null {
+  return descendantsByLocalName(element, localName)[0] ?? null;
+}
+
+function emuToPixels(value: string | null): number {
+  const emu = Number(value);
+
+  if (!Number.isFinite(emu)) {
+    return 0;
+  }
+
+  return (emu / emuPerInch) * cssPixelsPerInch;
 }
 
 async function hardenRelationshipFiles(zip: JSZip, parser: DOMParser): Promise<string[]> {
@@ -121,11 +154,54 @@ function slideNumberFromPath(path: string): number {
 function textFromSlideXml(xml: string, parser: DOMParser): string {
   const document = parser.parseFromString(xml, 'application/xml');
 
-  return Array.from(document.getElementsByTagName('*'))
-    .filter((node) => node.localName === 't')
+  return descendantsByLocalName(document, 't')
     .map((node) => node.textContent ?? '')
     .join(' ')
     .trim();
+}
+
+function searchBoxesFromSlideXml(xml: string, parser: DOMParser): PptxSearchBox[] {
+  const document = parser.parseFromString(xml, 'application/xml');
+  const shapes = Array.from(document.getElementsByTagName('*')).filter((node) => {
+    return node.localName === 'sp' || node.localName === 'graphicFrame';
+  });
+
+  return shapes.flatMap((shape) => {
+    const text = descendantsByLocalName(shape, 't')
+      .map((node) => node.textContent ?? '')
+      .join(' ')
+      .trim();
+
+    if (!text) {
+      return [];
+    }
+
+    const shapeProperties = childByLocalName(shape, 'spPr') ?? firstDescendantByLocalName(shape, 'spPr');
+    const transform = shapeProperties ? firstDescendantByLocalName(shapeProperties, 'xfrm') : firstDescendantByLocalName(shape, 'xfrm');
+    const offset = transform ? childByLocalName(transform, 'off') : null;
+    const extent = transform ? childByLocalName(transform, 'ext') : null;
+
+    if (!offset || !extent) {
+      return [];
+    }
+
+    const width = emuToPixels(extent.getAttribute('cx'));
+    const height = emuToPixels(extent.getAttribute('cy'));
+
+    if (width <= 0 || height <= 0) {
+      return [];
+    }
+
+    return [
+      {
+        text,
+        x: emuToPixels(offset.getAttribute('x')),
+        y: emuToPixels(offset.getAttribute('y')),
+        width,
+        height,
+      },
+    ];
+  });
 }
 
 function maxRunFontSize(paragraph: Element): number | null {
@@ -217,18 +293,39 @@ async function extractPptxSlideTexts(zip: JSZip, parser: DOMParser): Promise<str
   );
 }
 
+async function extractPptxSlideSearchBoxes(zip: JSZip, parser: DOMParser): Promise<PptxSearchBox[][]> {
+  const slidePaths = Object.keys(zip.files)
+    .filter((path) => /^ppt\/slides\/slide\d+\.xml$/i.test(path))
+    .sort((left, right) => slideNumberFromPath(left) - slideNumberFromPath(right));
+
+  return Promise.all(
+    slidePaths.map(async (path) => {
+      const slideFile = zip.file(path);
+      if (!slideFile) {
+        return [];
+      }
+
+      return searchBoxesFromSlideXml(await slideFile.async('text'), parser);
+    }),
+  );
+}
+
 async function preparePptx(arrayBuffer: ArrayBuffer): Promise<PreparedPptx> {
   const parser = new DOMParser();
   const zip = await JSZip.loadAsync(arrayBuffer.slice(0));
   const warnings = await hardenRelationshipFiles(zip, parser);
   const normalizedTextSizing = await normalizeSlideParagraphFontDefaults(zip, parser);
-  const slideTexts = await extractPptxSlideTexts(zip, parser);
+  const [slideTexts, slideSearchBoxes] = await Promise.all([
+    extractPptxSlideTexts(zip, parser),
+    extractPptxSlideSearchBoxes(zip, parser),
+  ]);
   const safeArrayBuffer =
     warnings.length > 0 || normalizedTextSizing ? await zip.generateAsync({ type: 'arraybuffer' }) : arrayBuffer.slice(0);
 
   return {
     arrayBuffer: safeArrayBuffer,
     slideTexts,
+    slideSearchBoxes,
     warnings,
   };
 }
@@ -297,12 +394,14 @@ function thumbnailSizeForSlide(slideSize: Size): Size {
 function PptxRendererComponent({ file, state, actions, controls }: DocumentRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const mainPaneRef = useRef<HTMLDivElement>(null);
+  const thumbnailListRef = useRef<HTMLDivElement>(null);
   const thumbnailCanvasRefs = useRef<Array<HTMLCanvasElement | null>>([]);
-  const thumbnailButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const viewerRef = useRef<PPTXViewer | null>(null);
   const thumbnailViewerRef = useRef<PPTXViewer | null>(null);
+  const thumbnailViewerReadyRef = useRef<Promise<PPTXViewer> | null>(null);
   const renderIdRef = useRef(0);
   const thumbnailRenderIdRef = useRef(0);
+  const lastSearchNavigationTermRef = useRef('');
   const mainPaneSize = useElementSize(mainPaneRef);
   const [isLoading, setIsLoading] = useState(true);
   const [isRendering, setIsRendering] = useState(false);
@@ -310,7 +409,9 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
   const [presentationBuffer, setPresentationBuffer] = useState<ArrayBuffer | null>(null);
   const [slideCount, setSlideCount] = useState(0);
   const [slideSize, setSlideSize] = useState<Size>(defaultSlideSize);
+  const [slideSearchBoxes, setSlideSearchBoxes] = useState<PptxSearchBox[][]>([]);
   const [slideTexts, setSlideTexts] = useState<string[]>([]);
+  const [thumbnailStatuses, setThumbnailStatuses] = useState<Record<number, 'loading' | 'ready' | 'error'>>({});
   const [warnings, setWarnings] = useState<string[]>([]);
 
   useEffect(() => {
@@ -328,12 +429,15 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
     setIsRendering(false);
     setPresentationBuffer(null);
     setSlideCount(0);
+    setSlideSearchBoxes([]);
     setSlideTexts([]);
+    lastSearchNavigationTermRef.current = '';
+    setThumbnailStatuses({});
     setWarnings([]);
     thumbnailCanvasRefs.current = [];
-    thumbnailButtonRefs.current = [];
     thumbnailViewerRef.current?.destroy();
     thumbnailViewerRef.current = null;
+    thumbnailViewerReadyRef.current = null;
     actions.setPageCount(undefined);
     actions.setSearchStats({});
     actions.setDocumentInfo({ title: file.fileName });
@@ -353,6 +457,7 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
       setSlideSize(slideSizeFromViewer(viewer));
       setPresentationBuffer(prepared.arrayBuffer.slice(0));
       setSlideCount(slideCount);
+      setSlideSearchBoxes(prepared.slideSearchBoxes);
       setSlideTexts(prepared.slideTexts);
       setWarnings(nextWarnings);
       setIsLoading(false);
@@ -382,6 +487,7 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
         viewerRef.current = null;
       }
       thumbnailViewerRef.current = null;
+      thumbnailViewerReadyRef.current = null;
     };
   }, [actions, file]);
 
@@ -390,11 +496,16 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
     [mainPaneSize, slideSize, state.fitMode, state.zoom],
   );
   const thumbnailSize = useMemo(() => thumbnailSizeForSlide(slideSize), [slideSize]);
-  const slideIndexes = useMemo(
-    () => Array.from({ length: slideCount }, (_, slideIndex) => slideIndex),
-    [slideCount],
-  );
   const hasThumbnailSidebar = controls.thumbnails && slideCount > 0;
+  const thumbnailVirtualizer = useVirtualizer({
+    count: hasThumbnailSidebar && !isSidebarCollapsed ? slideCount : 0,
+    estimateSize: () => Math.max(thumbnailEstimatedHeight, thumbnailSize.height + 20),
+    getScrollElement: () => thumbnailListRef.current,
+    overscan: 6,
+  });
+  const virtualThumbnailSlides = thumbnailVirtualizer.getVirtualItems();
+  const visibleThumbnailSlideIndexes = virtualThumbnailSlides.map((virtualSlide) => virtualSlide.index);
+  const visibleThumbnailSlideKey = visibleThumbnailSlideIndexes.join(',');
 
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -432,13 +543,12 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
     const activePresentationBuffer = presentationBuffer;
 
     if (isLoading || !hasThumbnailSidebar || isSidebarCollapsed || !activePresentationBuffer) {
+      thumbnailViewerRef.current?.destroy();
+      thumbnailViewerRef.current = null;
+      thumbnailViewerReadyRef.current = null;
       return undefined;
     }
 
-    const thumbnailBuffer: ArrayBuffer = activePresentationBuffer;
-    let cancelled = false;
-    const renderId = thumbnailRenderIdRef.current + 1;
-    thumbnailRenderIdRef.current = renderId;
     const thumbnailViewer = new PPTXViewer({
       autoChartRerenderDelayMs: 0,
       backgroundColor: '#ffffff',
@@ -448,11 +558,47 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
 
     thumbnailViewerRef.current?.destroy();
     thumbnailViewerRef.current = thumbnailViewer;
+    setThumbnailStatuses({});
 
-    async function renderThumbnails() {
-      await thumbnailViewer.loadFile(thumbnailBuffer.slice(0));
+    const readyPromise = thumbnailViewer.loadFile(activePresentationBuffer.slice(0)).then(() => thumbnailViewer);
+    thumbnailViewerReadyRef.current = readyPromise;
+    readyPromise.catch(() => undefined);
 
-      for (const slideIndex of slideIndexes) {
+    return () => {
+      thumbnailViewer.destroy();
+      if (thumbnailViewerRef.current === thumbnailViewer) {
+        thumbnailViewerRef.current = null;
+      }
+      if (thumbnailViewerReadyRef.current === readyPromise) {
+        thumbnailViewerReadyRef.current = null;
+      }
+    };
+  }, [hasThumbnailSidebar, isLoading, isSidebarCollapsed, presentationBuffer]);
+
+  useEffect(() => {
+    const readyPromise = thumbnailViewerReadyRef.current;
+
+    if (
+      isLoading ||
+      !hasThumbnailSidebar ||
+      isSidebarCollapsed ||
+      !readyPromise ||
+      visibleThumbnailSlideIndexes.length === 0
+    ) {
+      return undefined;
+    }
+
+    let cancelled = false;
+    const renderId = thumbnailRenderIdRef.current + 1;
+    thumbnailRenderIdRef.current = renderId;
+
+    async function renderVisibleThumbnails() {
+      const thumbnailViewer = await readyPromise;
+      if (!thumbnailViewer) {
+        return;
+      }
+
+      for (const slideIndex of visibleThumbnailSlideIndexes) {
         if (cancelled || thumbnailRenderIdRef.current !== renderId) {
           return;
         }
@@ -462,30 +608,69 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
           continue;
         }
 
-        prepareCanvas(thumbnailCanvas, slideSize);
-        await thumbnailViewer.renderSlide(slideIndex, thumbnailCanvas, { quality: 'low' });
-        setCanvasDisplaySize(thumbnailCanvas, thumbnailSize);
+        if (
+          thumbnailCanvas.dataset.ldvRenderedSlide === String(slideIndex) &&
+          thumbnailCanvas.dataset.ldvRenderedWidth === String(thumbnailSize.width) &&
+          thumbnailCanvas.dataset.ldvRenderedHeight === String(thumbnailSize.height)
+        ) {
+          setThumbnailStatuses((current) => ({ ...current, [slideIndex]: 'ready' }));
+          continue;
+        }
+
+        setThumbnailStatuses((current) => ({ ...current, [slideIndex]: 'loading' }));
+
+        try {
+          prepareCanvas(thumbnailCanvas, slideSize);
+          await thumbnailViewer.renderSlide(slideIndex, thumbnailCanvas, { quality: 'low' });
+
+          if (cancelled || thumbnailRenderIdRef.current !== renderId) {
+            return;
+          }
+
+          setCanvasDisplaySize(thumbnailCanvas, thumbnailSize);
+          thumbnailCanvas.dataset.ldvRenderedSlide = String(slideIndex);
+          thumbnailCanvas.dataset.ldvRenderedWidth = String(thumbnailSize.width);
+          thumbnailCanvas.dataset.ldvRenderedHeight = String(thumbnailSize.height);
+          setThumbnailStatuses((current) => ({ ...current, [slideIndex]: 'ready' }));
+        } catch {
+          if (!cancelled && thumbnailRenderIdRef.current === renderId) {
+            setThumbnailStatuses((current) => ({ ...current, [slideIndex]: 'error' }));
+          }
+        }
       }
     }
 
-    renderThumbnails().catch(() => undefined);
+    renderVisibleThumbnails().catch(() => {
+      if (!cancelled && thumbnailRenderIdRef.current === renderId) {
+        setThumbnailStatuses((current) => {
+          const nextStatuses = { ...current };
+          visibleThumbnailSlideIndexes.forEach((slideIndex) => {
+            nextStatuses[slideIndex] = 'error';
+          });
+          return nextStatuses;
+        });
+      }
+    });
 
     return () => {
       cancelled = true;
-      thumbnailViewer.destroy();
-      if (thumbnailViewerRef.current === thumbnailViewer) {
-        thumbnailViewerRef.current = null;
-      }
     };
-  }, [hasThumbnailSidebar, isLoading, isSidebarCollapsed, presentationBuffer, slideIndexes, slideSize, thumbnailSize]);
+  }, [
+    hasThumbnailSidebar,
+    isLoading,
+    isSidebarCollapsed,
+    slideSize,
+    thumbnailSize,
+    visibleThumbnailSlideKey,
+  ]);
 
   useEffect(() => {
     if (!hasThumbnailSidebar || isSidebarCollapsed) {
       return;
     }
 
-    thumbnailButtonRefs.current[state.page - 1]?.scrollIntoView({ block: 'nearest' });
-  }, [hasThumbnailSidebar, isSidebarCollapsed, state.page]);
+    thumbnailVirtualizer.scrollToIndex(state.page - 1, { align: 'auto' });
+  }, [hasThumbnailSidebar, isSidebarCollapsed, state.page, thumbnailVirtualizer]);
 
   const totalMatches = useMemo(
     () => slideTexts.reduce((total, slideText) => total + countMatches(slideText, state.searchTerm), 0),
@@ -495,6 +680,15 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
     () => countMatches(slideTexts[state.page - 1] ?? '', state.searchTerm),
     [slideTexts, state.page, state.searchTerm],
   );
+  const currentSearchBoxes = useMemo(() => {
+    const query = state.searchTerm.trim();
+
+    if (!query) {
+      return [];
+    }
+
+    return (slideSearchBoxes[state.page - 1] ?? []).filter((box) => countMatches(box.text, query) > 0);
+  }, [slideSearchBoxes, state.page, state.searchTerm]);
 
   useEffect(() => {
     actions.setSearchStats({
@@ -503,6 +697,26 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
       message: state.searchTerm ? `${totalMatches} match${totalMatches === 1 ? '' : 'es'}` : undefined,
     });
   }, [actions, currentPageMatches, state.searchTerm, totalMatches]);
+
+  useEffect(() => {
+    const query = state.searchTerm.trim();
+
+    if (!query) {
+      lastSearchNavigationTermRef.current = '';
+      return;
+    }
+
+    if (lastSearchNavigationTermRef.current === query) {
+      return;
+    }
+
+    lastSearchNavigationTermRef.current = query;
+    const firstMatchSlideIndex = slideTexts.findIndex((slideText) => countMatches(slideText, query) > 0);
+
+    if (firstMatchSlideIndex >= 0) {
+      actions.setPage(firstMatchSlideIndex + 1);
+    }
+  }, [actions, slideTexts, state.searchTerm]);
 
   if (isLoading) {
     return <div className="ldv-renderer-status">Loading presentation...</div>;
@@ -532,29 +746,58 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
             {isSidebarCollapsed ? <PanelLeftOpen aria-hidden="true" size={18} /> : <PanelLeftClose aria-hidden="true" size={18} />}
           </button>
           {!isSidebarCollapsed ? (
-            <div className="ldv-pptx-thumbnail-list" id="ldv-pptx-thumbnails">
-              {slideIndexes.map((slideIndex) => (
-                <button
-                  aria-current={state.page === slideIndex + 1 ? 'page' : undefined}
-                  aria-label={`Slide ${slideIndex + 1}`}
-                  className="ldv-pptx-thumbnail"
-                  key={slideIndex}
-                  onClick={() => actions.setPage(slideIndex + 1)}
-                  ref={(element) => {
-                    thumbnailButtonRefs.current[slideIndex] = element;
-                  }}
-                  type="button"
-                >
-                  <span className="ldv-pptx-thumbnail-number">{slideIndex + 1}</span>
-                  <canvas
-                    aria-hidden="true"
-                    className="ldv-pptx-thumbnail-canvas"
-                    ref={(element) => {
-                      thumbnailCanvasRefs.current[slideIndex] = element;
-                    }}
-                  />
-                </button>
-              ))}
+            <div className="ldv-pptx-thumbnail-list" id="ldv-pptx-thumbnails" ref={thumbnailListRef}>
+              <div
+                className="ldv-pptx-thumbnail-virtual-space"
+                style={{ height: `${thumbnailVirtualizer.getTotalSize()}px` }}
+              >
+                {virtualThumbnailSlides.map((virtualSlide) => {
+                  const slideIndex = virtualSlide.index;
+                  const thumbnailStatus = thumbnailStatuses[slideIndex] ?? 'loading';
+
+                  return (
+                    <button
+                      data-index={virtualSlide.index}
+                      aria-current={state.page === slideIndex + 1 ? 'page' : undefined}
+                      aria-label={`Slide ${slideIndex + 1}`}
+                      className="ldv-pptx-thumbnail"
+                      key={virtualSlide.key}
+                      onClick={() => actions.setPage(slideIndex + 1)}
+                      ref={(element) => {
+                        if (element) {
+                          thumbnailVirtualizer.measureElement(element);
+                        }
+                      }}
+                      style={{ transform: `translate(-50%, ${virtualSlide.start}px)` }}
+                      type="button"
+                    >
+                      <span className="ldv-pptx-thumbnail-number">{slideIndex + 1}</span>
+                      <span
+                        className="ldv-pptx-thumbnail-preview"
+                        style={{
+                          height: `${thumbnailSize.height}px`,
+                          width: `${thumbnailSize.width}px`,
+                        }}
+                      >
+                        <canvas
+                          aria-hidden="true"
+                          className="ldv-pptx-thumbnail-canvas"
+                          ref={(element) => {
+                            thumbnailCanvasRefs.current[slideIndex] = element;
+                          }}
+                          style={{ visibility: thumbnailStatus === 'ready' ? 'visible' : 'hidden' }}
+                        />
+                        {thumbnailStatus === 'loading' ? (
+                          <span className="ldv-thumbnail-loader" aria-hidden="true">
+                            <span className="ldv-thumbnail-loader-spinner" />
+                          </span>
+                        ) : null}
+                        {thumbnailStatus === 'error' ? <span className="ldv-thumbnail-error">Unable</span> : null}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
         </aside>
@@ -571,6 +814,22 @@ function PptxRendererComponent({ file, state, actions, controls }: DocumentRende
             }}
           >
             <canvas aria-label={`Slide ${state.page}`} className="ldv-pptx-canvas" ref={canvasRef} />
+            {currentSearchBoxes.length > 0 ? (
+              <div className="ldv-pptx-highlight-layer" aria-hidden="true">
+                {currentSearchBoxes.map((box, index) => (
+                  <span
+                    className="ldv-pptx-search-highlight"
+                    key={`${box.x}-${box.y}-${index}`}
+                    style={{
+                      height: `${(box.height / slideSize.height) * 100}%`,
+                      left: `${(box.x / slideSize.width) * 100}%`,
+                      top: `${(box.y / slideSize.height) * 100}%`,
+                      width: `${(box.width / slideSize.width) * 100}%`,
+                    }}
+                  />
+                ))}
+              </div>
+            ) : null}
             {isRendering ? <div className="ldv-pptx-render-status">Rendering slide...</div> : null}
           </div>
         </div>

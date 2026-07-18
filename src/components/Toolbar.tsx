@@ -28,6 +28,7 @@ interface ToolbarProps {
   controls: ResolvedDocumentViewerControls;
   fileName?: string;
   isFullscreen: boolean;
+  isPrinting: boolean;
   labels: DocumentViewerLabels;
   searchStats: SearchStats;
   state: ViewerRuntimeState;
@@ -46,24 +47,26 @@ interface ToolbarProps {
 
 interface IconButtonProps {
   label: string;
+  busy?: boolean;
   disabled?: boolean;
   pressed?: boolean;
   onClick: () => void;
   children: ReactNode;
 }
 
-function IconButton({ children, disabled, label, onClick, pressed }: IconButtonProps) {
+function IconButton({ busy, children, disabled, label, onClick, pressed }: IconButtonProps) {
   return (
     <button
+      aria-busy={busy || undefined}
       aria-label={label}
       aria-pressed={pressed}
       className="ldv-icon-button"
-      disabled={disabled}
+      disabled={disabled || busy}
       onClick={onClick}
       title={label}
       type="button"
     >
-      {children}
+      {busy ? <span className="ldv-icon-button-spinner" aria-hidden="true" /> : children}
     </button>
   );
 }
@@ -72,6 +75,7 @@ export function Toolbar({
   controls,
   fileName,
   isFullscreen,
+  isPrinting,
   labels,
   searchStats,
   state,
@@ -190,7 +194,7 @@ export function Toolbar({
       <div className="ldv-toolbar-spacer" />
 
       {controls.print ? (
-        <IconButton label={labels.print} onClick={onPrint}>
+        <IconButton busy={isPrinting} label={isPrinting ? labels.printing : labels.print} onClick={onPrint}>
           <Printer aria-hidden="true" size={18} />
         </IconButton>
       ) : null}

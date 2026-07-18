@@ -137,8 +137,31 @@ The default control surface includes:
 - Download
 - Fullscreen
 - PPTX slide thumbnails
+- Optional PDF page thumbnails
 
 Controls are also filtered by renderer capability. For example, media files hide zoom, fit, search, print, page navigation, and rotate; images hide search, page navigation, and rotate; text/table renderers hide fit/page navigation/rotate; legacy or unsupported files keep only the generic actions such as file name, download, and fullscreen.
+
+For PDFs, hiding page navigation switches the document surface to continuous scrolling so every page remains reachable without toolbar page buttons:
+
+```tsx
+<DocumentViewer
+  controls={{ pageNavigation: false }}
+  source={file}
+/>
+```
+
+Show PDF page thumbnails in a collapsible left drawer:
+
+```tsx
+<DocumentViewer
+  pdfOptions={{ showThumbnails: true }}
+  source={file}
+/>
+```
+
+PDF and PPTX thumbnail drawers are virtualized. Only visible thumbnails are mounted and rendered, and each thumbnail shows its own loader while it is prepared. This keeps the active PDF page or slide usable while thumbnails continue loading.
+
+Set `controls.thumbnails` to `false` to hide thumbnail drawers for both PPTX and PDF.
 
 Disable controls selectively:
 
@@ -154,6 +177,17 @@ Disable controls selectively:
 ```
 
 Every `controls` key is optional. Omitted controls use the default behavior.
+
+## Document-Specific Options
+
+Use document-specific option objects for behavior that only applies to one renderer type:
+
+```tsx
+<DocumentViewer
+  pdfOptions={{ showThumbnails: true }}
+  source={file}
+/>
+```
 
 ## Text Selection
 

@@ -138,6 +138,44 @@ function mapVerticalAlign(value: string | null): SpreadsheetCellStyle['verticalA
   return undefined;
 }
 
+function normalizeOdsBorder(value: string | null): string | undefined {
+  const border = value?.trim();
+
+  if (!border || border === 'none' || border === 'hidden') {
+    return undefined;
+  }
+
+  if (/^0(?:\.0+)?(?:cm|mm|in|pt|pc|px)?\s/i.test(border)) {
+    return undefined;
+  }
+
+  return border;
+}
+
+function applyOdsBorderStyles(cellStyle: SpreadsheetCellStyle, tableCellProperties: Element | undefined) {
+  const border = normalizeOdsBorder(localAttribute(tableCellProperties, 'border'));
+  const borderTop = normalizeOdsBorder(localAttribute(tableCellProperties, 'border-top')) ?? border;
+  const borderRight = normalizeOdsBorder(localAttribute(tableCellProperties, 'border-right')) ?? border;
+  const borderBottom = normalizeOdsBorder(localAttribute(tableCellProperties, 'border-bottom')) ?? border;
+  const borderLeft = normalizeOdsBorder(localAttribute(tableCellProperties, 'border-left')) ?? border;
+
+  if (borderTop) {
+    cellStyle.borderTop = borderTop;
+  }
+
+  if (borderRight) {
+    cellStyle.borderRight = borderRight;
+  }
+
+  if (borderBottom) {
+    cellStyle.borderBottom = borderBottom;
+  }
+
+  if (borderLeft) {
+    cellStyle.borderLeft = borderLeft;
+  }
+}
+
 function parseTextNodeContent(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) {
     return node.textContent ?? '';
@@ -188,6 +226,8 @@ function parseOdsStyle(styleElement: Element): OdsStyle {
   const wrapOption = localAttribute(tableCellProperties, 'wrap-option') ?? localAttribute(paragraphProperties, 'wrap-option');
   const writingMode = localAttribute(tableCellProperties, 'writing-mode') ?? localAttribute(paragraphProperties, 'writing-mode');
   const fontSize = localAttribute(textProperties, 'font-size');
+
+  applyOdsBorderStyles(cellStyle, tableCellProperties);
 
   if (backgroundColor && backgroundColor !== 'transparent') {
     cellStyle.backgroundColor = backgroundColor;
