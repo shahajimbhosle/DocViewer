@@ -71,12 +71,14 @@ type ControlName = keyof ResolvedDocumentViewerControls;
 
 const disabledControlsByRenderer: Record<string, ControlName[]> = {
   csv: ['fit', 'pageNavigation', 'rotate'],
-  docx: ['fit', 'rotate'],
+  docx: ['rotate'],
   image: ['pageNavigation', 'rotate', 'search'],
   'legacy-ppt': ['fit', 'pageNavigation', 'print', 'rotate', 'search', 'zoom'],
   markdown: ['fit', 'pageNavigation', 'rotate'],
   media: ['fit', 'pageNavigation', 'print', 'rotate', 'search', 'zoom'],
+  odt: ['fit', 'pageNavigation', 'rotate'],
   pptx: ['rotate'],
+  rtf: ['fit', 'pageNavigation', 'rotate'],
   spreadsheet: ['fit', 'pageNavigation', 'rotate'],
   text: ['fit', 'pageNavigation', 'rotate'],
   unsupported: ['fit', 'pageNavigation', 'print', 'rotate', 'search', 'zoom'],

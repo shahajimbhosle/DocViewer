@@ -5,8 +5,10 @@ import { ImageRenderer } from './ImageRenderer';
 import { LegacyPptRenderer } from './LegacyPptRenderer';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { MediaRenderer } from './MediaRenderer';
+import { OdtRenderer } from './OdtRenderer';
 import { PdfRenderer } from './PdfRenderer';
 import { PptxRenderer } from './PptxRenderer';
+import { RtfRenderer } from './RtfRenderer';
 import { SpreadsheetRenderer } from './SpreadsheetRenderer';
 import { TextRenderer } from './TextRenderer';
 import { UnsupportedRenderer } from './UnsupportedRenderer';
@@ -17,8 +19,10 @@ export const builtInRenderers: DocumentRenderer[] = [
   MarkdownRenderer,
   CsvRenderer,
   DocxRenderer,
+  OdtRenderer,
   LegacyPptRenderer,
   PptxRenderer,
+  RtfRenderer,
   SpreadsheetRenderer,
   TextRenderer,
   MediaRenderer,
@@ -32,8 +36,10 @@ export {
   LegacyPptRenderer,
   MarkdownRenderer,
   MediaRenderer,
+  OdtRenderer,
   PdfRenderer,
   PptxRenderer,
+  RtfRenderer,
   SpreadsheetRenderer,
   TextRenderer,
   UnsupportedRenderer,

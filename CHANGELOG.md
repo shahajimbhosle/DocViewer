@@ -4,6 +4,36 @@ All notable changes to `@shahajimbhosle/local-doc-viewer` will be documented in 
 
 This project follows semantic versioning. Dates use `YYYY-MM-DD`.
 
+## [1.0.7] - 2026-07-18
+
+### Added
+
+- Added local ODT rendering for OpenDocument Text files, including common paragraphs, headings, spans, lists, tables, links, styles, and embedded images.
+- Added local RTF rendering for Rich Text Format files, including common inline styles, colors, links, bullets, and basic tables.
+- Added basic example Blob samples for HTML, XML, YAML, TSV, PNG image, generated audio, generated video, and PPTX.
+- Added embedded XLSX drawing previews for local worksheet images and basic charts.
+
+### Changed
+
+- Clarified that CAD drawing files such as `.dwg`/`.dxf` require a custom renderer or local/private conversion.
+- Improved Markdown preview styling for headings, inline code, links, lists, blockquotes, code blocks, tables, and images.
+- Kept sanitized Markdown links clickable in a new unlinked tab while continuing to remove script-capable links, inline event handlers, and automatic remote resource references.
+- Aligned DOCX and ODT links with the same safe new-tab navigation behavior.
+- Preserved document-provided page sizes and margins for local ODT and RTF previews.
+- Moved basic example Blob generators out of `App.tsx` into separate files under `examples/basic/blobs`.
+
+### Fixed
+
+- Fixed OpenDocument `lr-tb` writing mode so normal ODT text and ODS cells do not render vertically.
+- Kept selected PDF/PPTX thumbnail borders above adjacent hover states.
+- Rendered basic XLSX charts/graphs that were previously ignored because they live in worksheet drawing parts outside the cell grid.
+- Showed ellipsis for clipped spreadsheet cell content and exposed the full value in a local hover popover.
+- Kept DOCX internal reference/bookmark links inside the viewer instead of opening the app domain in a new tab.
+- Preserved visible DOCX VML shape geometry and added local fallback rendering for unresolved DOCX images and unsupported DrawingML Word shapes.
+- Restored fit width and fit page controls for DOCX previews.
+- Normalized common DOCX Symbol/Wingdings bullet glyphs so filled dot bullets render as bullets instead of square boxes.
+- Normalized DOCX nested hollow circle bullets that Word stores as Courier New `o` markers.
+
 ## [1.0.6] - 2026-07-18
 
 ### Added

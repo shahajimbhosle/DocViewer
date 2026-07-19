@@ -11,7 +11,6 @@ const textExtensions = new Set([
   'jsx',
   'json',
   'log',
-  'rtf',
   'ts',
   'tsx',
   'txt',

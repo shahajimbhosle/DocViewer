@@ -8,7 +8,9 @@ import { parseXlsWorkbook, type XlsCell } from '../utils/xls';
 import {
   parseXlsxWorkbook,
   type ParsedSpreadsheetCell,
+  type SpreadsheetChartDrawing,
   type ParsedXlsxWorkbook,
+  type SpreadsheetDrawing,
   type SpreadsheetCellValue,
 } from '../utils/xlsx';
 
@@ -40,7 +42,7 @@ function valueToText(value: SpreadsheetCellValue): string {
 }
 
 function cellToText(cell?: SpreadsheetCell | null): string {
-  return valueToText(cell?.value ?? null);
+  return cell?.formattedValue ?? valueToText(cell?.value ?? null);
 }
 
 function xlsRowsToSpreadsheetRows(rows: XlsCell[][]): SpreadsheetRow[] {
@@ -97,14 +99,182 @@ function columnSpanWidthAt(columnIndex: number, colSpan: number, columnWidths: n
   return width;
 }
 
-function rowSpanHeightAt(rowIndex: number, rowSpan: number, rowHeights: number[], zoom: number): number {
+function displayRowHeightAt(rowIndex: number, displayRowHeights: number[], zoom: number): number {
+  return displayRowHeights[rowIndex] ?? gridRowHeight * zoom;
+}
+
+function displayRowSpanHeightAt(rowIndex: number, rowSpan: number, displayRowHeights: number[], zoom: number): number {
   let height = 0;
 
   for (let offset = 0; offset < rowSpan; offset += 1) {
-    height += rowHeightAt(rowIndex + offset, rowHeights, zoom);
+    height += displayRowHeightAt(rowIndex + offset, displayRowHeights, zoom);
   }
 
   return height;
+}
+
+function columnOffsetAt(columnIndex: number, columnWidths: number[], zoom: number): number {
+  let offset = 0;
+
+  for (let index = 0; index < columnIndex; index += 1) {
+    offset += columnWidthAt(index, columnWidths, zoom);
+  }
+
+  return offset;
+}
+
+function displayRowOffsetAt(rowIndex: number, displayRowHeights: number[], zoom: number): number {
+  let offset = 0;
+
+  for (let index = 0; index < rowIndex; index += 1) {
+    offset += displayRowHeightAt(index, displayRowHeights, zoom);
+  }
+
+  return offset;
+}
+
+function drawingStyle(
+  drawing: SpreadsheetDrawing,
+  columnWidths: number[],
+  displayRowHeights: number[],
+  zoom: number,
+  rowHeaderPixelWidth: number,
+  columnHeaderPixelHeight: number,
+): CSSProperties {
+  const anchor = drawing.anchor;
+  const left = rowHeaderPixelWidth + columnOffsetAt(anchor.fromColumn, columnWidths, zoom) + (anchor.columnOffsetPx ?? 0) * zoom;
+  const top = columnHeaderPixelHeight + displayRowOffsetAt(anchor.fromRow, displayRowHeights, zoom) + (anchor.rowOffsetPx ?? 0) * zoom;
+  const width =
+    typeof anchor.toColumn === 'number'
+      ? rowHeaderPixelWidth +
+          columnOffsetAt(anchor.toColumn, columnWidths, zoom) +
+          (anchor.toColumnOffsetPx ?? 0) * zoom -
+          left
+      : (anchor.widthPx ?? 220) * zoom;
+  const height =
+    typeof anchor.toRow === 'number'
+      ? columnHeaderPixelHeight +
+          displayRowOffsetAt(anchor.toRow, displayRowHeights, zoom) +
+          (anchor.toRowOffsetPx ?? 0) * zoom -
+          top
+      : (anchor.heightPx ?? 140) * zoom;
+
+  return {
+    height: scaledPixels(height),
+    left: scaledPixels(left),
+    top: scaledPixels(top),
+    width: scaledPixels(width),
+  };
+}
+
+function drawingColumnCount(drawings: SpreadsheetDrawing[]): number {
+  return drawings.reduce((count, drawing) => {
+    const anchor = drawing.anchor;
+    return Math.max(count, (anchor.toColumn ?? anchor.fromColumn + 1) + 1);
+  }, 0);
+}
+
+function drawingRowCount(drawings: SpreadsheetDrawing[]): number {
+  return drawings.reduce((count, drawing) => {
+    const anchor = drawing.anchor;
+    return Math.max(count, (anchor.toRow ?? anchor.fromRow + 1) + 1);
+  }, 0);
+}
+
+function compactNumber(value: number): string {
+  const absoluteValue = Math.abs(value);
+
+  if (absoluteValue >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(1)}M`;
+  }
+
+  if (absoluteValue >= 1_000) {
+    return `${(value / 1_000).toFixed(0)}K`;
+  }
+
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function stripSpreadsheetFormat(formatCode: string): string {
+  return formatCode
+    .replace(/\[[^\]]+\]/g, '')
+    .replace(/"([^"]*)"/g, '$1')
+    .replace(/\\(.)/g, '$1')
+    .replace(/_./g, '')
+    .replace(/\*./g, '');
+}
+
+function decimalPlacesFromSpreadsheetFormat(formatCode: string): { maximum: number; minimum: number } {
+  const decimalPart = stripSpreadsheetFormat(formatCode).split('.')[1]?.match(/[0#?]+/)?.[0] ?? '';
+
+  return {
+    maximum: decimalPart.length,
+    minimum: Array.from(decimalPart).filter((character) => character === '0').length,
+  };
+}
+
+function currencySymbolFromSpreadsheetFormat(formatCode: string): string {
+  const bracketCurrency = /\[\$([^\]-]+)(?:-[^\]]+)?\]/.exec(formatCode)?.[1];
+
+  if (bracketCurrency) {
+    return bracketCurrency;
+  }
+
+  return /[₹$€£¥]/.exec(stripSpreadsheetFormat(formatCode))?.[0] ?? '';
+}
+
+function formatChartNumber(value: number, formatCode: string | undefined): string {
+  if (!formatCode || /^general$/i.test(formatCode.trim())) {
+    return compactNumber(value);
+  }
+
+  const cleanFormat = stripSpreadsheetFormat(formatCode);
+  const percent = cleanFormat.includes('%');
+  const currency = currencySymbolFromSpreadsheetFormat(formatCode);
+  const placeholderIndex = cleanFormat.search(/[0#?]/);
+  const currencyIndex = currency ? cleanFormat.indexOf(currency) : -1;
+  const prefix = currency && (currencyIndex < placeholderIndex || placeholderIndex === -1) ? currency : '';
+  const suffix = `${percent ? '%' : ''}${currency && currencyIndex > placeholderIndex ? currency : ''}`;
+  const decimalPlaces = decimalPlacesFromSpreadsheetFormat(formatCode);
+  const adjustedValue = percent ? value * 100 : value;
+  const sign = adjustedValue < 0 ? '-' : '';
+  const formattedNumber = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: decimalPlaces.maximum,
+    minimumFractionDigits: decimalPlaces.minimum,
+    useGrouping: /[0#?],[0#?]/.test(cleanFormat) || Math.abs(adjustedValue) >= 1000,
+  }).format(Math.abs(adjustedValue));
+
+  return `${sign}${prefix}${formattedNumber}${suffix}`;
+}
+
+function niceChartStep(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) {
+    return 1;
+  }
+
+  const magnitude = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / magnitude;
+  const niceNormalized = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+
+  return niceNormalized * magnitude;
+}
+
+function chartAxisScale(values: number[]): { max: number; min: number; ticks: number[] } {
+  const finiteValues = values.filter((value) => Number.isFinite(value));
+
+  if (finiteValues.length === 0) {
+    return { max: 1, min: 0, ticks: [0, 0.5, 1] };
+  }
+
+  const rawMin = Math.min(0, ...finiteValues);
+  const rawMax = Math.max(0, ...finiteValues);
+  const step = niceChartStep((rawMax - rawMin || Math.abs(rawMax) || 1) / 4);
+  const min = Math.floor(rawMin / step) * step;
+  const max = Math.ceil(rawMax / step) * step || step;
+  const tickCount = Math.max(1, Math.round((max - min) / step));
+  const ticks = Array.from({ length: tickCount + 1 }, (_, index) => min + index * step);
+
+  return { max, min, ticks };
 }
 
 function defaultCellTextAlign(cell?: SpreadsheetCell): CSSProperties['textAlign'] {
@@ -177,7 +347,7 @@ function cellStyle(
   columnIndex: number,
   rowIndex: number,
   columnWidths: number[],
-  rowHeights: number[],
+  displayRowHeights: number[],
   zoom: number,
 ): CSSProperties {
   const colSpan = cell?.colSpan ?? 1;
@@ -185,7 +355,7 @@ function cellStyle(
   const customStyle = cell?.style ?? {};
   const whiteSpace = effectiveCellWhiteSpace(cell);
   const width = scaledPixels(columnSpanWidthAt(columnIndex, colSpan, columnWidths, zoom));
-  const height = scaledPixels(rowSpanHeightAt(rowIndex, rowSpan, rowHeights, 1));
+  const height = scaledPixels(displayRowSpanHeightAt(rowIndex, rowSpan, displayRowHeights, zoom));
   const textAlign = customStyle.textAlign ?? defaultCellTextAlign(cell);
   const verticalAlign = customStyle.verticalAlign ?? 'bottom';
 
@@ -231,10 +401,169 @@ function useElementSize(ref: RefObject<HTMLElement>): Size {
   return size;
 }
 
+function SpreadsheetChartPreview({ chart }: { chart: SpreadsheetChartDrawing }) {
+  const series = chart.series.find((candidate) => candidate.values.length > 0);
+  const values = series?.values ?? [];
+  const categories = chart.categories.length > 0 ? chart.categories : values.map((_, index) => String(index + 1));
+  const title = chart.title ?? series?.name ?? 'Chart';
+  const isHorizontalBar = chart.chartType === 'bar';
+  const isLine = chart.chartType === 'line' || chart.chartType === 'area';
+  const isPie = chart.chartType === 'pie' || chart.chartType === 'doughnut';
+  const axisScale = chartAxisScale(values);
+  const axisRange = Math.max(1, axisScale.max - axisScale.min);
+  const svgWidth = 340;
+  const plotLeft = 68;
+  const plotRight = 314;
+  const plotTop = 24;
+  const plotBottom = 142;
+  const plotWidth = plotRight - plotLeft;
+  const plotHeight = plotBottom - plotTop;
+  const valueToY = (value: number) => plotBottom - ((value - axisScale.min) / axisRange) * plotHeight;
+  const baselineY = valueToY(0);
+
+  if (values.length === 0) {
+    return (
+      <div className="ldv-spreadsheet-chart-empty">
+        <strong>{title}</strong>
+        <span>Chart data unavailable</span>
+      </div>
+    );
+  }
+
+  if (isPie) {
+    const total = values.reduce((sum, value) => sum + Math.max(0, value), 0) || 1;
+    let accumulated = 0;
+
+    return (
+      <div className="ldv-spreadsheet-chart">
+        <strong>{title}</strong>
+        <svg aria-label={title} viewBox="0 0 300 180" role="img">
+          {values.map((value, index) => {
+            const start = accumulated / total;
+            accumulated += Math.max(0, value);
+            const end = accumulated / total;
+            const largeArc = end - start > 0.5 ? 1 : 0;
+            const startAngle = start * Math.PI * 2 - Math.PI / 2;
+            const endAngle = end * Math.PI * 2 - Math.PI / 2;
+            const x1 = 96 + Math.cos(startAngle) * 58;
+            const y1 = 92 + Math.sin(startAngle) * 58;
+            const x2 = 96 + Math.cos(endAngle) * 58;
+            const y2 = 92 + Math.sin(endAngle) * 58;
+            const color = `hsl(${(index * 58 + 190) % 360} 62% 40%)`;
+
+            return (
+              <path
+                d={`M 96 92 L ${x1} ${y1} A 58 58 0 ${largeArc} 1 ${x2} ${y2} Z`}
+                fill={color}
+                key={`${categories[index]}-${index}`}
+              />
+            );
+          })}
+          {chart.chartType === 'doughnut' ? <circle cx="96" cy="92" fill="#ffffff" r="28" /> : null}
+          {values.slice(0, 4).map((value, index) => (
+            <g key={`legend-${categories[index]}-${index}`}>
+              <rect fill={`hsl(${(index * 58 + 190) % 360} 62% 40%)`} height="8" width="8" x="178" y={52 + index * 22} />
+              <text x="192" y={60 + index * 22}>
+                {categories[index]} {formatChartNumber(value, chart.valueFormatCode)}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    );
+  }
+
+  const pointStep = values.length > 1 ? plotWidth / (values.length - 1) : plotWidth;
+  const linePoints = values
+    .map((value, index) => {
+      const x = plotLeft + index * pointStep;
+      const y = valueToY(value);
+      return `${x},${y}`;
+    })
+    .join(' ');
+
+  return (
+    <div className="ldv-spreadsheet-chart">
+      <strong>{title}</strong>
+      <svg aria-label={title} viewBox={`0 0 ${svgWidth} 190`} role="img">
+        <line className="ldv-spreadsheet-chart-axis" x1={plotLeft} x2={plotRight} y1={baselineY} y2={baselineY} />
+        <line className="ldv-spreadsheet-chart-axis" x1={plotLeft} x2={plotLeft} y1={plotTop} y2={plotBottom} />
+        {axisScale.ticks.map((tick) => {
+          const y = valueToY(tick);
+
+          return (
+            <g key={tick}>
+              <line className="ldv-spreadsheet-chart-grid" x1={plotLeft} x2={plotRight} y1={y} y2={y} />
+              <text className="ldv-spreadsheet-chart-tick" x="4" y={y + 4}>
+                {formatChartNumber(tick, chart.valueFormatCode)}
+              </text>
+            </g>
+          );
+        })}
+        {isLine ? (
+          <>
+            {chart.chartType === 'area' ? (
+              <polygon
+                className="ldv-spreadsheet-chart-area"
+                points={`${plotLeft},${baselineY} ${linePoints} ${plotLeft + pointStep * (values.length - 1)},${baselineY}`}
+              />
+            ) : null}
+            <polyline className="ldv-spreadsheet-chart-line" points={linePoints} />
+            {values.map((value, index) => (
+              <circle cx={plotLeft + index * pointStep} cy={valueToY(value)} key={`${categories[index]}-${index}`} r="3" />
+            ))}
+          </>
+        ) : (
+          values.map((value, index) => {
+            const bandSize = (isHorizontalBar ? plotHeight : plotWidth) / Math.max(1, values.length);
+            const barSize = Math.max(4, bandSize * 0.62);
+            const y = valueToY(value);
+            const ratio = Math.abs(value) / Math.max(1, Math.max(Math.abs(axisScale.min), Math.abs(axisScale.max)));
+
+            return isHorizontalBar ? (
+              <g key={`${categories[index]}-${index}`}>
+                <rect
+                  className="ldv-spreadsheet-chart-bar"
+                  height={barSize}
+                  width={ratio * plotWidth}
+                  x={plotLeft}
+                  y={plotTop + index * bandSize + (bandSize - barSize) / 2}
+                />
+                <text className="ldv-spreadsheet-chart-label" x="4" y={plotTop + index * bandSize + bandSize / 2 + 3}>
+                  {categories[index]}
+                </text>
+              </g>
+            ) : (
+              <g key={`${categories[index]}-${index}`}>
+                <rect
+                  className="ldv-spreadsheet-chart-bar"
+                  height={Math.max(1, Math.abs(baselineY - y))}
+                  width={barSize}
+                  x={plotLeft + index * bandSize + (bandSize - barSize) / 2}
+                  y={Math.min(y, baselineY)}
+                />
+                <text
+                  className="ldv-spreadsheet-chart-label"
+                  textAnchor="middle"
+                  x={plotLeft + index * bandSize + bandSize / 2}
+                  y="164"
+                >
+                  {categories[index]}
+                </text>
+              </g>
+            );
+          })
+        )}
+      </svg>
+    </div>
+  );
+}
+
 function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: DocumentRendererProps) {
   const [sheetNames, setSheetNames] = useState<string[]>([]);
   const [sheetName, setSheetName] = useState('');
   const [rows, setRows] = useState<SpreadsheetRow[]>([]);
+  const [drawings, setDrawings] = useState<SpreadsheetDrawing[]>([]);
   const [columnWidths, setColumnWidths] = useState<number[]>([]);
   const [rowHeights, setRowHeights] = useState<number[]>([]);
   const [workbook, setWorkbook] = useState<SpreadsheetWorkbook | null>(null);
@@ -293,6 +622,7 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
   useEffect(() => {
     const sheet = workbook?.sheets.find((candidate) => candidate.name === sheetName);
     setColumnWidths(sheet?.columnWidths ?? []);
+    setDrawings(sheet?.drawings ?? []);
     setRowHeights(sheet?.rowHeights ?? []);
     setRows(sheet?.rows ?? []);
   }, [sheetName, workbook]);
@@ -314,9 +644,21 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
         }
       });
     });
+    drawings.forEach((drawing) => {
+      if (drawing.kind === 'chart') {
+        parts.push(drawing.title ?? '');
+        parts.push(...drawing.categories);
+        drawing.series.forEach((series) => {
+          parts.push(series.name ?? '');
+          parts.push(...series.values.map(String));
+        });
+      } else {
+        parts.push(drawing.name ?? '');
+      }
+    });
 
     return parts.join('\n');
-  }, [activeSearchTerm, rows]);
+  }, [activeSearchTerm, drawings, rows]);
   const matches = useMemo(() => (activeSearchTerm ? countMatches(plainText, activeSearchTerm) : 0), [activeSearchTerm, plainText]);
   const populatedColumnCount = useMemo(() => {
     let count = 0;
@@ -350,23 +692,23 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
     const averageHeight =
       populatedHeights.length > 0
         ? populatedHeights.reduce((sum, height) => sum + height, 0) / populatedHeights.length
-        : gridRowHeight;
+        : gridRowHeight * state.zoom;
 
     return averageHeight;
-  }, [displayRowHeights]);
+  }, [displayRowHeights, state.zoom]);
   const visibleColumnCount = useMemo(() => {
     const viewportColumns = Math.ceil(
       Math.max(0, viewportSize.width - gridRowHeaderWidth * state.zoom) / Math.max(1, averageColumnWidth),
     );
-    return Math.max(1, populatedColumnCount, viewportColumns);
-  }, [averageColumnWidth, populatedColumnCount, state.zoom, viewportSize.width]);
+    return Math.max(1, populatedColumnCount, drawingColumnCount(drawings), viewportColumns);
+  }, [averageColumnWidth, drawings, populatedColumnCount, state.zoom, viewportSize.width]);
   const visibleRowCount = useMemo(() => {
     const tabsHeight = showSheetTabs ? sheetTabsHeight : 0;
     const viewportRows = Math.ceil(
       Math.max(0, viewportSize.height - tabsHeight - gridColumnHeaderHeight * state.zoom) / Math.max(1, averageRowHeight),
     );
-    return Math.max(1, rows.length, viewportRows);
-  }, [averageRowHeight, rows.length, showSheetTabs, state.zoom, viewportSize.height]);
+    return Math.max(1, rows.length, drawingRowCount(drawings), viewportRows);
+  }, [averageRowHeight, drawings, rows.length, showSheetTabs, state.zoom, viewportSize.height]);
   const rowHeaderPixelWidth = Math.max(1, Math.round(gridRowHeaderWidth * state.zoom));
   const columnHeaderPixelHeight = Math.max(1, Math.round(gridColumnHeaderHeight * state.zoom));
   const rowHeaderStyle: CSSProperties = {
@@ -375,7 +717,7 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
   };
   const rowVirtualizer = useVirtualizer({
     count: visibleRowCount,
-    estimateSize: (index) => rowHeightAt(index, displayRowHeights, 1),
+    estimateSize: (index) => displayRowHeightAt(index, displayRowHeights, state.zoom),
     getScrollElement: () => gridScrollRef.current,
     overscan: 12,
     paddingStart: columnHeaderPixelHeight,
@@ -388,6 +730,12 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
     overscan: 6,
     paddingStart: rowHeaderPixelWidth,
   });
+
+  useEffect(() => {
+    rowVirtualizer.measure();
+    columnVirtualizer.measure();
+  }, [columnVirtualizer, columnWidths, displayRowHeights, rowVirtualizer, state.zoom]);
+
   const virtualRows = rowVirtualizer.getVirtualItems();
   const virtualColumns = columnVirtualizer.getVirtualItems();
   const virtualGridHeight = rowVirtualizer.getTotalSize();
@@ -481,8 +829,15 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
                   {virtualColumns.map((virtualColumn) => {
                     const cellIndex = virtualColumn.index;
                     const cell = row[cellIndex];
+                    const cellText = cellToText(cell);
                     const comments = cell?.comments ?? [];
                     const commentLabel = cellCommentLabel(cell);
+                    const cellClassName = [
+                      'ldv-spreadsheet-virtual-cell',
+                      comments.length > 0 ? 'ldv-cell-has-comment' : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' ');
 
                     if (cell?.hiddenByMerge) {
                       return null;
@@ -491,8 +846,8 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
                     return (
                       <div
                         aria-colindex={cellIndex + 1}
-                        aria-label={commentLabel ? `${cellToText(cell)} ${commentLabel}` : undefined}
-                        className={comments.length > 0 ? 'ldv-cell-has-comment ldv-spreadsheet-virtual-cell' : 'ldv-spreadsheet-virtual-cell'}
+                        aria-label={commentLabel ? `${cellText} ${commentLabel}` : undefined}
+                        className={cellClassName}
                         key={`${rowIndex}-${cellIndex}`}
                         role="gridcell"
                         style={{
@@ -501,7 +856,7 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
                         }}
                         title={commentLabel || undefined}
                       >
-                        {highlightText(cellToText(cell), state.searchTerm)}
+                        {highlightText(cellText, state.searchTerm)}
                         {comments.length > 0 ? (
                           <span className="ldv-cell-comment" tabIndex={0}>
                             <span className="ldv-cell-comment-marker" aria-hidden="true" />
@@ -523,6 +878,30 @@ function SpreadsheetRendererComponent({ file, state, actions, viewportRef }: Doc
               );
             })}
           </div>
+          {drawings.length > 0 ? (
+            <div className="ldv-spreadsheet-drawing-layer" aria-label="Spreadsheet drawings">
+              {drawings.map((drawing, drawingIndex) => (
+                <div
+                  className={`ldv-spreadsheet-drawing ldv-spreadsheet-drawing-${drawing.kind}`}
+                  key={`${drawing.kind}-${drawingIndex}`}
+                  style={drawingStyle(
+                    drawing,
+                    columnWidths,
+                    displayRowHeights,
+                    state.zoom,
+                    rowHeaderPixelWidth,
+                    columnHeaderPixelHeight,
+                  )}
+                >
+                  {drawing.kind === 'image' ? (
+                    <img alt={drawing.name ?? 'Spreadsheet image'} src={drawing.dataUrl} />
+                  ) : (
+                    <SpreadsheetChartPreview chart={drawing} />
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
       {showSheetTabs ? (

@@ -18,15 +18,17 @@ The package is designed for confidential documents. It accepts `File`, `Blob`, `
 - Text/code: TXT, JSON, XML, YAML, HTML as text/sanitized content, logs, JS/TS/CSS
 - Markdown, rendered locally and sanitized
 - CSV/TSV
-- DOCX, rendered locally with Word-style layout and embedded styles where browser rendering permits
-- XLS/XLSX/ODS, parsed locally in the browser
+- DOCX, rendered locally with Word-style layout, embedded images, common shapes, and embedded styles where browser rendering permits
+- ODT, rendered locally from OpenDocument Text packages with common text, list, table, link, style, and embedded image support
+- RTF, rendered locally with common rich text styling, colors, links, bullets, and basic tables
+- XLS/XLSX/ODS, parsed locally in the browser; XLSX embedded images and basic chart previews are rendered when present
 - PPTX, rendered locally to canvas with slide navigation and text search counts
 - DOCX comments and XLSX/ODS notes/comments are shown locally when present
 - Audio/video formats supported by the browser
 
 Spreadsheet previews use row and column virtualization so larger XLS/XLSX/ODS files do not mount every grid cell into the DOM at once.
 
-Legacy binary Word/PowerPoint documents, OpenDocument text/presentation files, strict Office fidelity edge cases, encrypted documents, CAD files, and uncommon enterprise formats need a custom renderer or a private/on-prem conversion service. The viewer exposes a renderer registry for that purpose.
+Legacy binary Word/PowerPoint documents, OpenDocument presentation files, strict Office fidelity edge cases, CAD drawing files such as `.dwg`/`.dxf`, and uncommon enterprise formats are not rendered by default. Use a custom renderer or a private/on-prem conversion service for those formats. The viewer exposes a renderer registry for that purpose.
 
 ### About `.ppt`
 
@@ -83,7 +85,9 @@ By default, the viewer:
 - Does not call third-party document preview services
 - Rejects `http://` and `https://` document URLs
 - Uses local `Blob` URLs for preview/download/print flows
-- Sanitizes generated HTML and removes remote resource references from rendered HTML
+- Sanitizes generated HTML to remove scripts, event handlers, and embedded executable content
+- Removes automatic remote resource references from rendered HTML, such as image and embed sources
+- Keeps Markdown and document links clickable when the sanitizer considers the URL safe, and opens them in a new unlinked tab with `noopener noreferrer`
 - Removes external PPTX relationships before rendering so linked resources are not fetched
 - Uses a packaged PDF.js worker instead of a CDN worker
 

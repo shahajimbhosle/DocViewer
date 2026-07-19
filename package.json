@@ -1,7 +1,7 @@
 {
   "name": "@shahajimbhosle/local-doc-viewer",
-  "version": "1.0.6",
-  "description": "Privacy-first React document viewer for local-only PDF, DOCX, XLSX, ODS, PPTX, image, media, Markdown, CSV, and text previews.",
+  "version": "1.0.7",
+  "description": "Privacy-first React document viewer for local-only PDF, DOCX, ODT, RTF, XLSX, ODS, PPTX, image, media, Markdown, CSV, and text previews.",
   "type": "module",
   "author": "Shahaji Bhosle",
   "repository": {
@@ -54,6 +54,12 @@
     "pdf-viewer",
     "docx",
     "docx-viewer",
+    "odt",
+    "odt-viewer",
+    "opendocument",
+    "rtf",
+    "rtf-viewer",
+    "rich-text-format",
     "xls",
     "xlsx",
     "ods",

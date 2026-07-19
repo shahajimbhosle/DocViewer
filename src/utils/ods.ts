@@ -152,6 +152,16 @@ function normalizeOdsBorder(value: string | null): string | undefined {
   return border;
 }
 
+function isVerticalWritingMode(value: string | null): boolean {
+  const writingMode = value?.trim().toLowerCase();
+  return writingMode === 'tb-rl' || writingMode === 'tb-lr' || writingMode === 'vertical-rl' || writingMode === 'vertical-lr';
+}
+
+function isRightToLeftWritingMode(value: string | null): boolean {
+  const writingMode = value?.trim().toLowerCase();
+  return writingMode === 'rl-tb' || writingMode === 'tb-rl' || writingMode === 'vertical-rl';
+}
+
 function applyOdsBorderStyles(cellStyle: SpreadsheetCellStyle, tableCellProperties: Element | undefined) {
   const border = normalizeOdsBorder(localAttribute(tableCellProperties, 'border'));
   const borderTop = normalizeOdsBorder(localAttribute(tableCellProperties, 'border-top')) ?? border;
@@ -251,11 +261,11 @@ function parseOdsStyle(styleElement: Element): OdsStyle {
     cellStyle.whiteSpace = 'nowrap';
   }
 
-  if (writingMode?.includes('tb')) {
+  if (isVerticalWritingMode(writingMode)) {
     cellStyle.writingMode = 'vertical-rl';
   }
 
-  if (writingMode?.includes('rl')) {
+  if (isRightToLeftWritingMode(writingMode)) {
     cellStyle.direction = 'rtl';
   }
 

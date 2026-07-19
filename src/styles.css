@@ -511,13 +511,15 @@
   left: 50%;
   width: max-content;
   max-width: calc(100% - 8px);
+  z-index: 0;
 }
 
-.ldv-pdf-thumbnail:hover {
+.ldv-pdf-thumbnail:hover:not([aria-current="page"]) {
   background: #eef3f8;
 }
 
 .ldv-pdf-thumbnail[aria-current="page"] {
+  z-index: 2;
   border-color: var(--ldv-accent);
   background: #e8f5f3;
 }
@@ -666,11 +668,12 @@
   text-align: left;
 }
 
-.ldv-pptx-thumbnail:hover {
+.ldv-pptx-thumbnail:hover:not([aria-current="page"]) {
   background: #eef3f8;
 }
 
 .ldv-pptx-thumbnail[aria-current="page"] {
+  z-index: 2;
   border-color: var(--ldv-accent);
   background: #e8f5f3;
 }
@@ -810,6 +813,13 @@
   line-height: 1.65;
 }
 
+.ldv-paged-rich-document {
+  width: auto;
+  max-width: none;
+  min-height: auto;
+  flex: 0 0 auto;
+}
+
 .ldv-rich-document h1,
 .ldv-rich-document h2,
 .ldv-rich-document h3 {
@@ -819,6 +829,163 @@
 
 .ldv-rich-document img {
   max-width: 100%;
+}
+
+.ldv-markdown-document {
+  padding: 32px;
+  color: #1f2328;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.ldv-markdown-document > :first-child {
+  margin-top: 0;
+}
+
+.ldv-markdown-document > :last-child {
+  margin-bottom: 0;
+}
+
+.ldv-markdown-document h1,
+.ldv-markdown-document h2 {
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #d0d7de;
+}
+
+.ldv-markdown-document h1 {
+  margin: 0 0 24px;
+  font-size: 2em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.ldv-markdown-document h2 {
+  margin: 24px 0 16px;
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.ldv-markdown-document h3 {
+  margin: 24px 0 16px;
+  font-size: 1.25em;
+  font-weight: 700;
+}
+
+.ldv-markdown-document h4,
+.ldv-markdown-document h5,
+.ldv-markdown-document h6 {
+  margin: 20px 0 12px;
+  font-weight: 700;
+}
+
+.ldv-markdown-document p,
+.ldv-markdown-document blockquote,
+.ldv-markdown-document ul,
+.ldv-markdown-document ol,
+.ldv-markdown-document dl,
+.ldv-markdown-document table,
+.ldv-markdown-document pre {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.ldv-markdown-document ul,
+.ldv-markdown-document ol {
+  padding-left: 2em;
+}
+
+.ldv-markdown-document li + li {
+  margin-top: 0.25em;
+}
+
+.ldv-markdown-document a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.ldv-markdown-document a[href]:hover {
+  text-decoration: underline;
+}
+
+.ldv-markdown-document a:not([href]) {
+  cursor: default;
+}
+
+.ldv-markdown-document code,
+.ldv-markdown-document kbd,
+.ldv-markdown-document samp {
+  padding: 0.2em 0.4em;
+  border-radius: 6px;
+  background: rgba(175, 184, 193, 0.2);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 85%;
+}
+
+.ldv-markdown-document pre {
+  overflow: auto;
+  padding: 16px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  line-height: 1.45;
+}
+
+.ldv-markdown-document pre code {
+  display: inline;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 100%;
+  white-space: pre;
+}
+
+.ldv-markdown-document blockquote {
+  padding: 0 1em;
+  border-left: 0.25em solid #d0d7de;
+  color: #57606a;
+}
+
+.ldv-markdown-document hr {
+  height: 0.25em;
+  margin: 24px 0;
+  border: 0;
+  background: #d8dee4;
+}
+
+.ldv-rich-document.ldv-markdown-document table {
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow: auto;
+}
+
+.ldv-rich-document.ldv-markdown-document th {
+  font-weight: 700;
+}
+
+.ldv-rich-document.ldv-markdown-document th,
+.ldv-rich-document.ldv-markdown-document td {
+  padding: 6px 13px;
+  border: 1px solid #d0d7de;
+}
+
+.ldv-rich-document.ldv-markdown-document tr {
+  border-top: 1px solid #d0d7de;
+}
+
+.ldv-rich-document.ldv-markdown-document tr:nth-child(2n) {
+  background: #f6f8fa;
+}
+
+.ldv-markdown-document img {
+  max-width: 100%;
+  box-sizing: content-box;
+  background: #ffffff;
+}
+
+.ldv-markdown-document input[type="checkbox"] {
+  margin: 0 0.2em 0.25em -1.4em;
+  vertical-align: middle;
 }
 
 .ldv-docx-preview-shell {
@@ -847,6 +1014,142 @@
   max-width: none;
 }
 
+.ldv-docx-document svg {
+  overflow: visible;
+}
+
+.ldv-docx-normalized-bullet {
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+.ldv-docx-document p[class*="docx-num-"]::before {
+  font-family: Arial, Helvetica, sans-serif !important;
+}
+
+.ldv-odt-document {
+  padding: 32px;
+  color: #1d2733;
+  font-size: 16px;
+  line-height: 1.55;
+}
+
+.ldv-odt-document > :first-child {
+  margin-top: 0;
+}
+
+.ldv-odt-document > :last-child {
+  margin-bottom: 0;
+}
+
+.ldv-odt-document h1,
+.ldv-odt-document h2,
+.ldv-odt-document h3,
+.ldv-odt-document h4,
+.ldv-odt-document h5,
+.ldv-odt-document h6 {
+  margin: 1em 0 0.45em;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.ldv-odt-document p {
+  margin: 0 0 0.85em;
+}
+
+.ldv-odt-document a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.ldv-odt-document a[href]:hover {
+  text-decoration: underline;
+}
+
+.ldv-odt-list {
+  margin: 0 0 0.85em;
+  padding-left: 2em;
+}
+
+.ldv-rich-document.ldv-odt-document table {
+  width: auto;
+  max-width: 100%;
+  margin: 0 0 1em;
+  border-collapse: collapse;
+}
+
+.ldv-rich-document.ldv-odt-document th,
+.ldv-rich-document.ldv-odt-document td {
+  padding: 6px 10px;
+  border: 1px solid var(--ldv-border);
+  vertical-align: top;
+}
+
+.ldv-odt-image {
+  display: inline-block;
+  max-width: 100%;
+  height: auto;
+  vertical-align: middle;
+}
+
+.ldv-odt-note {
+  color: var(--ldv-muted);
+}
+
+.ldv-odt-note-body {
+  margin-left: 4px;
+  font-size: 0.85em;
+}
+
+.ldv-odt-page-break {
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px dashed var(--ldv-border-strong);
+}
+
+.ldv-rtf-document {
+  padding: 32px;
+  color: #1d2733;
+  font-size: 16px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.ldv-rtf-document > :first-child {
+  margin-top: 0;
+}
+
+.ldv-rtf-document > :last-child {
+  margin-bottom: 0;
+}
+
+.ldv-rtf-document p {
+  margin: 0 0 0.85em;
+}
+
+.ldv-rtf-document a {
+  color: #0969da;
+  text-decoration: none;
+}
+
+.ldv-rtf-document a[href]:hover {
+  text-decoration: underline;
+}
+
+.ldv-rich-document.ldv-rtf-document table {
+  width: auto;
+  max-width: 100%;
+  margin: 0 0 1em;
+  border-collapse: collapse;
+  white-space: normal;
+}
+
+.ldv-rich-document.ldv-rtf-document th,
+.ldv-rich-document.ldv-rtf-document td {
+  padding: 6px 10px;
+  border: 1px solid var(--ldv-border);
+  vertical-align: top;
+}
+
 .ldv-docx-vml-textbox {
   display: inline-flex;
   align-items: center;
@@ -864,6 +1167,55 @@
 
 .ldv-docx-vml-textbox span {
   line-height: 1.05;
+}
+
+.ldv-docx-vml-graphic {
+  overflow: visible;
+}
+
+.ldv-docx-vml-textbox-foreign-object {
+  overflow: visible;
+}
+
+.ldv-docx-shape-fallback {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.ldv-docx-image-fallback {
+  display: inline-block;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.ldv-docx-image-fallback img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ldv-docx-shape-fallback svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ldv-docx-shape-fallback-text {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 4px 8px;
+  color: #111827;
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .ldv-rich-document table {
@@ -928,6 +1280,108 @@
   overflow: visible;
 }
 
+.ldv-spreadsheet-drawing-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.ldv-spreadsheet-drawing {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  background: #ffffff;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+}
+
+.ldv-spreadsheet-drawing-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.ldv-spreadsheet-chart,
+.ldv-spreadsheet-chart-empty {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-rows: auto 1fr;
+  gap: 4px;
+  padding: 8px;
+  color: #1d2733;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.ldv-spreadsheet-chart strong,
+.ldv-spreadsheet-chart-empty strong {
+  overflow: hidden;
+  color: #6b7280;
+  font-size: 14px;
+  font-weight: 500;
+  padding-left: 16px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ldv-spreadsheet-chart svg {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.ldv-spreadsheet-chart text {
+  fill: #475569;
+  font-size: 9px;
+}
+
+.ldv-spreadsheet-chart-axis {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.ldv-spreadsheet-chart-grid {
+  stroke: #d8e0ea;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.ldv-spreadsheet-chart-tick {
+  fill: #64748b;
+}
+
+.ldv-spreadsheet-chart-bar {
+  fill: #1d6f8a;
+}
+
+.ldv-spreadsheet-chart-line {
+  fill: none;
+  stroke: #0f766e;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.ldv-spreadsheet-chart-area {
+  fill: rgba(15, 118, 110, 0.16);
+}
+
+.ldv-spreadsheet-chart circle {
+  fill: #0f766e;
+}
+
+.ldv-spreadsheet-chart-empty {
+  place-items: center;
+  align-content: center;
+  color: var(--ldv-muted);
+  text-align: center;
+}
+
 .ldv-spreadsheet-virtual-row {
   position: absolute;
   top: 0;
@@ -979,14 +1433,15 @@
 .ldv-spreadsheet-virtual-cell {
   position: absolute;
   top: 0;
-  overflow: hidden;
+  overflow: visible;
   padding: 0;
   background: #ffffff;
   line-height: 1.18;
 }
 
-.ldv-spreadsheet-virtual-cell.ldv-cell-has-comment {
-  overflow: visible;
+.ldv-spreadsheet-virtual-cell:hover,
+.ldv-spreadsheet-virtual-cell:focus-within {
+  z-index: 12;
 }
 
 .ldv-sheet-tabs {

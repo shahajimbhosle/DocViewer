@@ -10,6 +10,7 @@ export interface SpreadsheetCellStyle {
   borderTop?: string;
   color?: string;
   direction?: 'ltr' | 'rtl';
+  fontFamily?: string;
   fontSize?: string;
   fontStyle?: string;
   fontWeight?: string;
@@ -28,8 +29,46 @@ export interface SpreadsheetComment {
   kind: 'comment' | 'note';
 }
 
+export interface SpreadsheetDrawingAnchor {
+  fromColumn: number;
+  fromRow: number;
+  columnOffsetPx?: number;
+  rowOffsetPx?: number;
+  toColumn?: number;
+  toRow?: number;
+  toColumnOffsetPx?: number;
+  toRowOffsetPx?: number;
+  widthPx?: number;
+  heightPx?: number;
+}
+
+export interface SpreadsheetImageDrawing {
+  anchor: SpreadsheetDrawingAnchor;
+  dataUrl: string;
+  kind: 'image';
+  name?: string;
+}
+
+export interface SpreadsheetChartSeries {
+  name?: string;
+  values: number[];
+}
+
+export interface SpreadsheetChartDrawing {
+  anchor: SpreadsheetDrawingAnchor;
+  categories: string[];
+  chartType: 'area' | 'bar' | 'column' | 'doughnut' | 'line' | 'pie' | 'unknown';
+  kind: 'chart';
+  series: SpreadsheetChartSeries[];
+  title?: string;
+  valueFormatCode?: string;
+}
+
+export type SpreadsheetDrawing = SpreadsheetChartDrawing | SpreadsheetImageDrawing;
+
 export interface ParsedSpreadsheetCell {
   value: SpreadsheetCellValue;
+  formattedValue?: string;
   style?: SpreadsheetCellStyle;
   comments?: SpreadsheetComment[];
   colSpan?: number;
@@ -39,6 +78,7 @@ export interface ParsedSpreadsheetCell {
 
 export interface ParsedXlsxSheet {
   columnWidths?: number[];
+  drawings?: SpreadsheetDrawing[];
   name: string;
   rowHeights?: number[];
   rows: ParsedSpreadsheetCell[][];
@@ -66,9 +106,46 @@ interface MergeRange {
   endColumn: number;
 }
 
+interface ParsedSheetWithChartDescriptors extends ParsedXlsxSheet {
+  chartDescriptors: SpreadsheetChartDescriptor[];
+}
+
+interface SpreadsheetChartDescriptor {
+  anchor: SpreadsheetDrawingAnchor;
+  chartXml: string;
+}
+
 type SpreadsheetBorderProperty = 'borderBottom' | 'borderLeft' | 'borderRight' | 'borderTop';
 
 const builtinDateFormats = new Set([14, 15, 16, 17, 22, 27, 30, 36, 45, 46, 47, 50, 57]);
+const builtinNumberFormats = new Map<number, string>([
+  [1, '0'],
+  [2, '0.00'],
+  [3, '#,##0'],
+  [4, '#,##0.00'],
+  [9, '0%'],
+  [10, '0.00%'],
+  [11, '0.00E+00'],
+  [14, 'm/d/yy'],
+  [15, 'd-mmm-yy'],
+  [16, 'd-mmm'],
+  [17, 'mmm-yy'],
+  [18, 'h:mm AM/PM'],
+  [19, 'h:mm:ss AM/PM'],
+  [20, 'h:mm'],
+  [21, 'h:mm:ss'],
+  [22, 'm/d/yy h:mm'],
+  [37, '#,##0;(#,##0)'],
+  [38, '#,##0;[Red](#,##0)'],
+  [39, '#,##0.00;(#,##0.00)'],
+  [40, '#,##0.00;[Red](#,##0.00)'],
+  [45, 'mm:ss'],
+  [46, '[h]:mm:ss'],
+  [47, 'mmss.0'],
+  [48, '##0.0E+0'],
+  [49, '@'],
+]);
+const emuPerPixel = 9525;
 
 const indexedColors = [
   '000000',
@@ -188,8 +265,24 @@ function relationshipPathForPart(path: string): string {
   return `${parts.join('/')}/_rels/${fileName}.rels`;
 }
 
+function emuToPixels(value: string | null): number {
+  const emu = Number(value ?? 0);
+  return Number.isFinite(emu) ? emu / emuPerPixel : 0;
+}
+
+function relationshipAttribute(element: Element | undefined, localName: string): string | undefined {
+  if (!element) {
+    return undefined;
+  }
+
+  return (
+    element.getAttribute(`r:${localName}`) ??
+    Array.from(element.attributes).find((attribute) => attribute.localName === localName)?.value
+  );
+}
+
 function cellRefToIndexes(cellRef: string): { rowIndex: number; columnIndex: number } | null {
-  const match = /^([A-Z]+)(\d+)$/i.exec(cellRef);
+  const match = /^\$?([A-Z]+)\$?(\d+)$/i.exec(cellRef);
   if (!match) {
     return null;
   }
@@ -205,6 +298,63 @@ function cellRefToIndexes(cellRef: string): { rowIndex: number; columnIndex: num
     rowIndex: Number(match[2]) - 1,
     columnIndex: columnIndex - 1,
   };
+}
+
+function parseSimpleRangeFormula(
+  formula: string | undefined,
+  fallbackSheetName: string,
+): { sheetName: string; start: { rowIndex: number; columnIndex: number }; end: { rowIndex: number; columnIndex: number } } | undefined {
+  const cleanFormula = formula?.trim().replace(/^=/, '');
+
+  if (!cleanFormula) {
+    return undefined;
+  }
+
+  const match = /^(?:'((?:[^']|'')+)'|([^!]+))!(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?$/i.exec(cleanFormula);
+  const localMatch = /^(\$?[A-Z]+\$?\d+)(?::(\$?[A-Z]+\$?\d+))?$/i.exec(cleanFormula);
+  const sheetName = match ? (match[1] ? match[1].replace(/''/g, "'") : match[2]) : fallbackSheetName;
+  const startRef = match?.[3] ?? localMatch?.[1] ?? '';
+  const endRef = match?.[4] ?? localMatch?.[2] ?? startRef;
+  const start = cellRefToIndexes(startRef);
+  const end = cellRefToIndexes(endRef);
+
+  if (!start || !end || !sheetName) {
+    return undefined;
+  }
+
+  return {
+    sheetName,
+    start: {
+      rowIndex: Math.min(start.rowIndex, end.rowIndex),
+      columnIndex: Math.min(start.columnIndex, end.columnIndex),
+    },
+    end: {
+      rowIndex: Math.max(start.rowIndex, end.rowIndex),
+      columnIndex: Math.max(start.columnIndex, end.columnIndex),
+    },
+  };
+}
+
+function imageMimeTypeFromPath(path: string): string {
+  const extension = path.split('.').pop()?.toLowerCase();
+
+  switch (extension) {
+    case 'gif':
+      return 'image/gif';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'webp':
+      return 'image/webp';
+    case 'tif':
+    case 'tiff':
+      return 'image/tiff';
+    case 'png':
+    default:
+      return 'image/png';
+  }
 }
 
 function excelColumnWidthToPixels(width: number): number {
@@ -484,9 +634,164 @@ function isDateFormat(numFmtId: number | undefined, numberFormats: Map<number, s
   return /(^|[^\\])[dmyhsa]/.test(format) && !/[0#?]\/[0#?]/.test(format);
 }
 
+function formatCodeForId(numFmtId: number | undefined, numberFormats: Map<number, string>): string | undefined {
+  if (typeof numFmtId !== 'number') {
+    return undefined;
+  }
+
+  return numberFormats.get(numFmtId) ?? builtinNumberFormats.get(numFmtId);
+}
+
 function excelSerialDate(value: number, date1904: boolean): Date {
   const epoch = Date.UTC(date1904 ? 1904 : 1899, date1904 ? 0 : 11, date1904 ? 1 : 30);
   return new Date(epoch + value * 86_400_000);
+}
+
+function splitFormatSections(formatCode: string): string[] {
+  const sections: string[] = [];
+  let current = '';
+  let inQuote = false;
+
+  for (let index = 0; index < formatCode.length; index += 1) {
+    const character = formatCode[index];
+
+    if (character === '"') {
+      inQuote = !inQuote;
+      current += character;
+      continue;
+    }
+
+    if (character === ';' && !inQuote) {
+      sections.push(current);
+      current = '';
+      continue;
+    }
+
+    current += character;
+  }
+
+  sections.push(current);
+  return sections;
+}
+
+function selectFormatSection(formatCode: string, value: number): string {
+  const sections = splitFormatSections(formatCode);
+
+  if (value < 0 && sections[1]) {
+    return sections[1];
+  }
+
+  if (value === 0 && sections[2]) {
+    return sections[2];
+  }
+
+  return sections[0] ?? formatCode;
+}
+
+function stripFormatMetadata(section: string): string {
+  return section
+    .replace(/\[[^\]]+\]/g, '')
+    .replace(/"([^"]*)"/g, '$1')
+    .replace(/\\(.)/g, '$1')
+    .replace(/_./g, '')
+    .replace(/\*./g, '');
+}
+
+function decimalPlacesFromFormat(section: string): { maximum: number; minimum: number } {
+  const numericSection = stripFormatMetadata(section);
+  const decimalPart = numericSection.split('.')[1]?.match(/[0#?]+/)?.[0] ?? '';
+
+  return {
+    maximum: decimalPart.length,
+    minimum: Array.from(decimalPart).filter((character) => character === '0').length,
+  };
+}
+
+function currencySymbolFromFormat(section: string): string {
+  const bracketCurrency = /\[\$([^\]-]+)(?:-[^\]]+)?\]/.exec(section)?.[1];
+
+  if (bracketCurrency) {
+    return bracketCurrency;
+  }
+
+  return /[₹$€£¥]/.exec(stripFormatMetadata(section))?.[0] ?? '';
+}
+
+function formatNumberByCode(value: number, formatCode: string | undefined): string | undefined {
+  if (!formatCode || /^general$/i.test(formatCode.trim())) {
+    return undefined;
+  }
+
+  const section = selectFormatSection(formatCode, value);
+  const cleanSection = stripFormatMetadata(section);
+  const percent = cleanSection.includes('%');
+  const currency = currencySymbolFromFormat(section);
+  const placeholderIndex = cleanSection.search(/[0#?]/);
+  const currencyIndex = currency ? cleanSection.indexOf(currency) : -1;
+  const prefix = currency && (currencyIndex < placeholderIndex || placeholderIndex === -1) ? currency : '';
+  const suffix = `${percent ? '%' : ''}${currency && currencyIndex > placeholderIndex ? currency : ''}`;
+  const decimalPlaces = decimalPlacesFromFormat(section);
+  const useGrouping = /[0#?],[0#?]/.test(cleanSection);
+  const hasParentheses = value < 0 && cleanSection.includes('(') && cleanSection.includes(')');
+  const adjustedValue = Math.abs(percent ? value * 100 : value);
+  const formattedNumber = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: decimalPlaces.maximum,
+    minimumFractionDigits: decimalPlaces.minimum,
+    useGrouping,
+  }).format(adjustedValue);
+  const sign = value < 0 && !hasParentheses ? '-' : '';
+  const formatted = `${sign}${prefix}${formattedNumber}${suffix}`;
+
+  return hasParentheses ? `(${formatted})` : formatted;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function formatDateByCode(value: Date, formatCode: string | undefined): string | undefined {
+  if (!formatCode) {
+    return undefined;
+  }
+
+  const cleanCode = stripFormatMetadata(selectFormatSection(formatCode, 1)).toLowerCase();
+  const year = value.getUTCFullYear();
+  const month = value.getUTCMonth() + 1;
+  const day = value.getUTCDate();
+  const shortYear = String(year).slice(-2);
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+  if (cleanCode.includes('yyyy-mm-dd')) {
+    return `${year}-${pad2(month)}-${pad2(day)}`;
+  }
+
+  if (cleanCode.includes('d-mmm-yy')) {
+    return `${day}-${monthNames[month - 1]}-${shortYear}`;
+  }
+
+  if (cleanCode.includes('mmm-yy')) {
+    return `${monthNames[month - 1]}-${shortYear}`;
+  }
+
+  if (cleanCode.includes('m/d/yy')) {
+    return `${month}/${day}/${shortYear}`;
+  }
+
+  return undefined;
+}
+
+function formatCellDisplayValue(value: SpreadsheetCellValue, numFmtId: number | undefined, numberFormats: Map<number, string>): string | undefined {
+  const formatCode = formatCodeForId(numFmtId, numberFormats);
+
+  if (typeof value === 'number') {
+    return formatNumberByCode(value, formatCode);
+  }
+
+  if (value instanceof Date) {
+    return formatDateByCode(value, formatCode);
+  }
+
+  return undefined;
 }
 
 function booleanAttribute(value: string | null): boolean {
@@ -623,9 +928,22 @@ function parseStyles(stylesXml: string | undefined, themeColors: string[]): Pars
         .map((fontNode) => {
           const style: SpreadsheetCellStyle = {};
           const color = colorFromElement(childByLocalName(fontNode, 'color'), themeColors);
+          const fontSize = childByLocalName(fontNode, 'sz')?.getAttribute('val');
+          const fontFamily = childByLocalName(fontNode, 'name')?.getAttribute('val');
 
           if (color) {
             style.color = color;
+          }
+
+          if (fontSize) {
+            style.fontSize = `${fontSize}pt`;
+          }
+
+          if (fontFamily) {
+            const safeFontFamily = fontFamily.replace(/["\\]/g, '').trim();
+            style.fontFamily = safeFontFamily.includes(' ')
+              ? `"${safeFontFamily}", Arial, Helvetica, sans-serif`
+              : `${safeFontFamily}, Arial, Helvetica, sans-serif`;
           }
 
           if (childByLocalName(fontNode, 'b')) {
@@ -839,6 +1157,308 @@ function mergeCommentMaps(...maps: Array<Map<string, SpreadsheetComment[]>>): Ma
   return merged;
 }
 
+function parseDrawingPoint(element: Element | undefined): {
+  column: number;
+  columnOffsetPx: number;
+  row: number;
+  rowOffsetPx: number;
+} {
+  if (!element) {
+    return {
+      column: 0,
+      columnOffsetPx: 0,
+      row: 0,
+      rowOffsetPx: 0,
+    };
+  }
+
+  return {
+    column: Number(childByLocalName(element, 'col')?.textContent ?? 0),
+    columnOffsetPx: emuToPixels(childByLocalName(element, 'colOff')?.textContent ?? '0'),
+    row: Number(childByLocalName(element, 'row')?.textContent ?? 0),
+    rowOffsetPx: emuToPixels(childByLocalName(element, 'rowOff')?.textContent ?? '0'),
+  };
+}
+
+function parseDrawingAnchor(anchorElement: Element): SpreadsheetDrawingAnchor | undefined {
+  const from = parseDrawingPoint(childByLocalName(anchorElement, 'from'));
+
+  if (!Number.isFinite(from.column) || !Number.isFinite(from.row)) {
+    return undefined;
+  }
+
+  const anchor: SpreadsheetDrawingAnchor = {
+    columnOffsetPx: from.columnOffsetPx,
+    fromColumn: Math.max(0, from.column),
+    fromRow: Math.max(0, from.row),
+    rowOffsetPx: from.rowOffsetPx,
+  };
+  const toElement = childByLocalName(anchorElement, 'to');
+  const extentElement = childByLocalName(anchorElement, 'ext');
+
+  if (toElement) {
+    const to = parseDrawingPoint(toElement);
+    anchor.toColumn = Math.max(anchor.fromColumn, to.column);
+    anchor.toColumnOffsetPx = to.columnOffsetPx;
+    anchor.toRow = Math.max(anchor.fromRow, to.row);
+    anchor.toRowOffsetPx = to.rowOffsetPx;
+  }
+
+  if (extentElement) {
+    anchor.widthPx = emuToPixels(extentElement.getAttribute('cx'));
+    anchor.heightPx = emuToPixels(extentElement.getAttribute('cy'));
+  }
+
+  return anchor;
+}
+
+function cachedTextValues(element: Element | undefined): string[] {
+  if (!element) {
+    return [];
+  }
+
+  const cache = childByLocalName(element, 'strCache') ?? childByLocalName(element, 'multiLvlStrCache');
+  return elementsByLocalName(cache ?? element, 'pt').map((point) => childByLocalName(point, 'v')?.textContent ?? '');
+}
+
+function cachedNumberValues(element: Element | undefined): number[] {
+  if (!element) {
+    return [];
+  }
+
+  return elementsByLocalName(element, 'pt')
+    .map((point) => Number(childByLocalName(point, 'v')?.textContent ?? ''))
+    .filter((value) => Number.isFinite(value));
+}
+
+function cellsFromRangeFormula(
+  formula: string | undefined,
+  fallbackSheetName: string,
+  sheetLookup: Map<string, ParsedSpreadsheetCell[][]>,
+): ParsedSpreadsheetCell[] {
+  const range = parseSimpleRangeFormula(formula, fallbackSheetName);
+
+  if (!range) {
+    return [];
+  }
+
+  const rows = sheetLookup.get(range.sheetName);
+  if (!rows) {
+    return [];
+  }
+
+  const cells: ParsedSpreadsheetCell[] = [];
+
+  for (let rowIndex = range.start.rowIndex; rowIndex <= range.end.rowIndex; rowIndex += 1) {
+    for (let columnIndex = range.start.columnIndex; columnIndex <= range.end.columnIndex; columnIndex += 1) {
+      cells.push(rows[rowIndex]?.[columnIndex] ?? { value: null });
+    }
+  }
+
+  return cells;
+}
+
+function valuesFromRangeFormula(
+  formula: string | undefined,
+  fallbackSheetName: string,
+  sheetLookup: Map<string, ParsedSpreadsheetCell[][]>,
+): SpreadsheetCellValue[] {
+  return cellsFromRangeFormula(formula, fallbackSheetName, sheetLookup).map((cell) => cell.value);
+}
+
+function textValuesFromChartReference(
+  element: Element | undefined,
+  fallbackSheetName: string,
+  sheetLookup: Map<string, ParsedSpreadsheetCell[][]>,
+): string[] {
+  if (!element) {
+    return [];
+  }
+
+  const cached = cachedTextValues(element);
+
+  if (cached.length > 0) {
+    return cached;
+  }
+
+  const formula = elementsByLocalName(element, 'f')[0]?.textContent ?? undefined;
+  return cellsFromRangeFormula(formula, fallbackSheetName, sheetLookup).map((cell) => {
+    const value = cell.formattedValue ?? cell.value;
+
+    if (value instanceof Date) {
+      return value.toLocaleDateString();
+    }
+
+    return value === null || typeof value === 'undefined' ? '' : String(value);
+  });
+}
+
+function numberValuesFromChartReference(
+  element: Element | undefined,
+  fallbackSheetName: string,
+  sheetLookup: Map<string, ParsedSpreadsheetCell[][]>,
+): number[] {
+  if (!element) {
+    return [];
+  }
+
+  const cached = cachedNumberValues(element);
+
+  if (cached.length > 0) {
+    return cached;
+  }
+
+  const formula = elementsByLocalName(element, 'f')[0]?.textContent ?? undefined;
+  return valuesFromRangeFormula(formula, fallbackSheetName, sheetLookup)
+    .map((value) => (typeof value === 'number' ? value : Number(value)))
+    .filter((value) => Number.isFinite(value));
+}
+
+function parseChartType(document: Document): SpreadsheetChartDrawing['chartType'] {
+  const chartTypeElement = elementsByLocalName(document, 'barChart')[0];
+
+  if (chartTypeElement) {
+    return childByLocalName(chartTypeElement, 'barDir')?.getAttribute('val') === 'bar' ? 'bar' : 'column';
+  }
+
+  if (elementsByLocalName(document, 'lineChart')[0]) {
+    return 'line';
+  }
+
+  if (elementsByLocalName(document, 'areaChart')[0]) {
+    return 'area';
+  }
+
+  if (elementsByLocalName(document, 'pieChart')[0]) {
+    return 'pie';
+  }
+
+  if (elementsByLocalName(document, 'doughnutChart')[0]) {
+    return 'doughnut';
+  }
+
+  return 'unknown';
+}
+
+function parseChartTitle(document: Document): string | undefined {
+  const titleElement = elementsByLocalName(document, 'title')[0];
+  const text = titleElement
+    ? elementsByLocalName(titleElement, 't')
+        .map((node) => node.textContent ?? '')
+        .join(' ')
+        .trim()
+    : '';
+
+  return text || undefined;
+}
+
+function parseChartValueFormat(document: Document, seriesElements: Element[]): string | undefined {
+  const axisFormat = elementsByLocalName(document, 'valAx')
+    .map((axisElement) => childByLocalName(axisElement, 'numFmt')?.getAttribute('formatCode') ?? undefined)
+    .find((formatCode) => formatCode && !/^general$/i.test(formatCode));
+
+  if (axisFormat) {
+    return axisFormat;
+  }
+
+  return seriesElements
+    .map((seriesElement) => {
+      const valueElement = childByLocalName(seriesElement, 'val');
+      return valueElement ? elementsByLocalName(valueElement, 'formatCode')[0]?.textContent?.trim() : undefined;
+    })
+    .find((formatCode) => formatCode && !/^general$/i.test(formatCode));
+}
+
+function parseChartDrawing(
+  descriptor: SpreadsheetChartDescriptor,
+  fallbackSheetName: string,
+  sheetLookup: Map<string, ParsedSpreadsheetCell[][]>,
+): SpreadsheetChartDrawing {
+  const chartDocument = parseXml(descriptor.chartXml);
+  const seriesElements = elementsByLocalName(chartDocument, 'ser');
+  const series = seriesElements.map((seriesElement, index) => {
+    const textElement = childByLocalName(seriesElement, 'tx');
+    const name =
+      (textElement ? childByLocalName(textElement, 'v')?.textContent : undefined) ??
+      textValuesFromChartReference(textElement, fallbackSheetName, sheetLookup)[0] ??
+      `Series ${index + 1}`;
+    const values = numberValuesFromChartReference(childByLocalName(seriesElement, 'val'), fallbackSheetName, sheetLookup);
+
+    return {
+      name,
+      values,
+    };
+  });
+  const categories = textValuesFromChartReference(childByLocalName(seriesElements[0], 'cat'), fallbackSheetName, sheetLookup);
+
+  return {
+    anchor: descriptor.anchor,
+    categories,
+    chartType: parseChartType(chartDocument),
+    kind: 'chart',
+    series,
+    title: parseChartTitle(chartDocument),
+    valueFormatCode: parseChartValueFormat(chartDocument, seriesElements),
+  };
+}
+
+async function parseWorksheetDrawings(
+  drawingPath: string,
+  drawingXml: string,
+  relationshipsXml: string | undefined,
+  readText: (path: string) => Promise<string | undefined>,
+  readBase64: (path: string) => Promise<string | undefined>,
+): Promise<{ chartDescriptors: SpreadsheetChartDescriptor[]; images: SpreadsheetImageDrawing[] }> {
+  const document = parseXml(drawingXml);
+  const relationships = parseRelationships(relationshipsXml, drawingPath);
+  const relationshipsById = new Map(relationships.map((relationship) => [relationship.id, relationship]));
+  const chartDescriptors: SpreadsheetChartDescriptor[] = [];
+  const images: SpreadsheetImageDrawing[] = [];
+  const drawingRoot = document.documentElement.localName === 'wsDr' ? document.documentElement : elementsByLocalName(document, 'wsDr')[0];
+
+  await Promise.all(
+    drawingRoot
+      ? Array.from(drawingRoot.children)
+          .filter((element) => element.localName === 'oneCellAnchor' || element.localName === 'twoCellAnchor')
+          .map(async (anchorElement) => {
+            const anchor = parseDrawingAnchor(anchorElement);
+
+            if (!anchor) {
+              return;
+            }
+
+            const chartRelationId = relationshipAttribute(elementsByLocalName(anchorElement, 'chart')[0], 'id');
+            const imageRelationId = relationshipAttribute(elementsByLocalName(anchorElement, 'blip')[0], 'embed');
+
+            if (chartRelationId) {
+              const chartRelationship = relationshipsById.get(chartRelationId);
+              const chartXml = chartRelationship ? await readText(chartRelationship.target) : undefined;
+
+              if (chartXml) {
+                chartDescriptors.push({ anchor, chartXml });
+              }
+            }
+
+            if (imageRelationId) {
+              const imageRelationship = relationshipsById.get(imageRelationId);
+              const base64 = imageRelationship ? await readBase64(imageRelationship.target) : undefined;
+
+              if (imageRelationship && base64) {
+                images.push({
+                  anchor,
+                  dataUrl: `data:${imageMimeTypeFromPath(imageRelationship.target)};base64,${base64}`,
+                  kind: 'image',
+                  name: elementsByLocalName(anchorElement, 'cNvPr')[0]?.getAttribute('name') ?? undefined,
+                });
+              }
+            }
+          })
+      : [],
+  );
+
+  return { chartDescriptors, images };
+}
+
 function parseCellValue(
   cell: Element,
   sharedStrings: string[],
@@ -939,8 +1559,10 @@ function parseWorksheet(
     const styleIndex = Number(cell.getAttribute('s') ?? 0);
     const parsedStyle = styles[styleIndex];
     const value = parseCellValue(cell, sharedStrings, parsedStyle, numberFormats, date1904);
+    const formattedValue = formatCellDisplayValue(value, parsedStyle?.numFmtId, numberFormats);
 
     setCell(rows, position.rowIndex, position.columnIndex, {
+      formattedValue,
       value,
       style: parsedStyle?.style,
     });
@@ -969,6 +1591,10 @@ export async function parseXlsxWorkbook(arrayBuffer: ArrayBuffer): Promise<Parse
     const file = zip.file(path);
     return file ? file.async('text') : undefined;
   };
+  const readBase64 = async (path: string): Promise<string | undefined> => {
+    const file = zip.file(path);
+    return file ? file.async('base64') : undefined;
+  };
   const workbookXml = await readText('xl/workbook.xml');
 
   if (!workbookXml) {
@@ -989,34 +1615,63 @@ export async function parseXlsxWorkbook(arrayBuffer: ArrayBuffer): Promise<Parse
     ...parsePersons(await readText('xl/persons/persons.xml')),
   ]);
 
-  return {
-    sheets: await Promise.all(
-      sheets.map(async (sheet) => {
-        const sheetRelationships = parseRelationships(await readText(relationshipPathForPart(sheet.path)), sheet.path);
-        const noteRelationships = sheetRelationships.filter((relationship) => relationship.type.toLowerCase().endsWith('/comments'));
-        const threadedRelationships = sheetRelationships.filter((relationship) =>
-          relationship.type.toLowerCase().includes('threadedcomment'),
-        );
-        const noteComments = await Promise.all(noteRelationships.map(async (relationship) => parseClassicComments(await readText(relationship.target))));
-        const threadedComments = await Promise.all(
-          threadedRelationships.map(async (relationship) => parseThreadedComments(await readText(relationship.target), persons)),
-        );
-        const worksheet = parseWorksheet(
-          (await readText(sheet.path)) ?? '',
-          sharedStrings,
-          styles,
-          numberFormats,
-          date1904,
-          mergeCommentMaps(...noteComments, ...threadedComments),
-        );
+  const parsedSheets: ParsedSheetWithChartDescriptors[] = await Promise.all(
+    sheets.map(async (sheet) => {
+      const sheetRelationships = parseRelationships(await readText(relationshipPathForPart(sheet.path)), sheet.path);
+      const noteRelationships = sheetRelationships.filter((relationship) => relationship.type.toLowerCase().endsWith('/comments'));
+      const threadedRelationships = sheetRelationships.filter((relationship) =>
+        relationship.type.toLowerCase().includes('threadedcomment'),
+      );
+      const drawingRelationships = sheetRelationships.filter((relationship) => relationship.type.toLowerCase().endsWith('/drawing'));
+      const noteComments = await Promise.all(noteRelationships.map(async (relationship) => parseClassicComments(await readText(relationship.target))));
+      const threadedComments = await Promise.all(
+        threadedRelationships.map(async (relationship) => parseThreadedComments(await readText(relationship.target), persons)),
+      );
+      const worksheetDrawings = await Promise.all(
+        drawingRelationships.map(async (relationship) => {
+          const drawingXml = await readText(relationship.target);
 
-        return {
-          columnWidths: worksheet.columnWidths,
-          name: sheet.name,
-          rowHeights: worksheet.rowHeights,
-          rows: worksheet.rows,
-        };
-      }),
-    ),
+          return drawingXml
+            ? parseWorksheetDrawings(
+                relationship.target,
+                drawingXml,
+                await readText(relationshipPathForPart(relationship.target)),
+                readText,
+                readBase64,
+              )
+            : { chartDescriptors: [], images: [] };
+        }),
+      );
+      const worksheet = parseWorksheet(
+        (await readText(sheet.path)) ?? '',
+        sharedStrings,
+        styles,
+        numberFormats,
+        date1904,
+        mergeCommentMaps(...noteComments, ...threadedComments),
+      );
+
+      return {
+        chartDescriptors: worksheetDrawings.flatMap((drawing) => drawing.chartDescriptors),
+        columnWidths: worksheet.columnWidths,
+        drawings: worksheetDrawings.flatMap((drawing) => drawing.images),
+        name: sheet.name,
+        rowHeights: worksheet.rowHeights,
+        rows: worksheet.rows,
+      };
+    }),
+  );
+  const sheetLookup = new Map(parsedSheets.map((sheet) => [sheet.name, sheet.rows]));
+
+  return {
+    sheets: parsedSheets.map((sheet) => {
+      const chartDrawings = sheet.chartDescriptors.map((descriptor) => parseChartDrawing(descriptor, sheet.name, sheetLookup));
+      const { chartDescriptors, ...parsedSheet } = sheet;
+
+      return {
+        ...parsedSheet,
+        drawings: [...(parsedSheet.drawings ?? []), ...chartDrawings],
+      };
+    }),
   };
 }
