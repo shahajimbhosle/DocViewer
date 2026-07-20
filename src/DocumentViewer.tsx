@@ -7,11 +7,13 @@ import type {
   DocumentRenderer,
   DocumentViewerControls,
   DocumentViewerLabels,
+  DocumentViewerMarkdownOptions,
   DocumentViewerPdfOptions,
   DocumentViewerProps,
   DocumentViewerUserSelect,
   FitMode,
   ResolvedDocumentViewerControls,
+  ResolvedDocumentViewerMarkdownOptions,
   ResolvedDocumentViewerPdfOptions,
   ResolvedDocument,
   SearchStats,
@@ -35,6 +37,10 @@ const defaultControls: ResolvedDocumentViewerControls = {
 
 const defaultPdfOptions: ResolvedDocumentViewerPdfOptions = {
   showThumbnails: false,
+};
+
+const defaultMarkdownOptions: ResolvedDocumentViewerMarkdownOptions = {
+  allowRemoteImages: true,
 };
 
 const defaultLabels: DocumentViewerLabels = {
@@ -94,6 +100,10 @@ function mergeControls(controls?: DocumentViewerControls): ResolvedDocumentViewe
 
 function mergePdfOptions(pdfOptions?: DocumentViewerPdfOptions): ResolvedDocumentViewerPdfOptions {
   return { ...defaultPdfOptions, ...pdfOptions };
+}
+
+function mergeMarkdownOptions(markdownOptions?: DocumentViewerMarkdownOptions): ResolvedDocumentViewerMarkdownOptions {
+  return { ...defaultMarkdownOptions, ...markdownOptions };
 }
 
 function mergeLabels(labels?: Partial<DocumentViewerLabels>): DocumentViewerLabels {
@@ -316,13 +326,14 @@ export function DocumentViewer({
   style,
   height = 640,
   renderers,
-  allowRemoteUrls = false,
+  allowRemoteUrls = true,
   fetchCredentials = 'same-origin',
   minZoom = 0.25,
   maxZoom = 4,
   initialZoom = 1,
   initialPage = 1,
   controls,
+  markdownOptions,
   pdfOptions,
   labels,
   emptyState,
@@ -349,6 +360,7 @@ export function DocumentViewer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const mergedControls = useMemo(() => mergeControls(controls), [controls]);
+  const mergedMarkdownOptions = useMemo(() => mergeMarkdownOptions(markdownOptions), [markdownOptions]);
   const mergedPdfOptions = useMemo(() => mergePdfOptions(pdfOptions), [pdfOptions]);
   const mergedLabels = useMemo(() => mergeLabels(labels), [labels]);
 
@@ -595,6 +607,7 @@ export function DocumentViewer({
         selectedRenderer.id,
         resolvedFile.objectUrl,
         selectedRenderer.id === 'pdf' ? mergedPdfOptions.showThumbnails : '',
+        selectedRenderer.id === 'markdown' ? mergedMarkdownOptions.allowRemoteImages : '',
       ].join(':')
     : undefined;
   const loadingContent = loader ?? <DefaultLoader label={mergedLabels.loading} />;
@@ -644,6 +657,7 @@ export function DocumentViewer({
             file={resolvedFile}
             key={rendererKey}
             labels={mergedLabels}
+            markdownOptions={mergedMarkdownOptions}
             pdfOptions={mergedPdfOptions}
             state={runtimeState}
             viewportRef={viewportRef}

@@ -4,7 +4,7 @@ import type { DocumentRenderer, DocumentRendererProps } from '../types';
 import { countMatches } from '../utils/highlight';
 import { htmlToText, sanitizeHtml } from '../utils/sanitize';
 
-function MarkdownRendererComponent({ file, state, actions }: DocumentRendererProps) {
+function MarkdownRendererComponent({ file, state, actions, markdownOptions }: DocumentRendererProps) {
   const [html, setHtml] = useState('');
   const [plainText, setPlainText] = useState('');
 
@@ -19,7 +19,9 @@ function MarkdownRendererComponent({ file, state, actions }: DocumentRendererPro
         gfm: true,
         breaks: false,
       });
-      const cleanHtml = sanitizeHtml(rendered);
+      const cleanHtml = sanitizeHtml(rendered, {
+        allowRemoteImages: markdownOptions.allowRemoteImages,
+      });
 
       if (!cancelled) {
         setHtml(cleanHtml);

@@ -168,7 +168,7 @@ async function blobFromUrl(
 ): Promise<Blob> {
   if (isRemoteUrl(url) && !allowRemoteUrls) {
     throw new DocumentSourceError(
-      'Remote document URLs are disabled by default. Pass a File, Blob, ArrayBuffer, blob: URL, data: URL, or set allowRemoteUrls only for trusted same-origin/private endpoints.',
+      'Remote document URLs are disabled for this viewer instance. Pass a File, Blob, ArrayBuffer, blob: URL, data: URL, or enable allowRemoteUrls for trusted document URLs.',
     );
   }
 
@@ -210,7 +210,7 @@ export async function resolveDocumentSource(
   options: ResolveDocumentSourceOptions = {},
 ): Promise<ResolvedDocument> {
   const input = normalizeSourceInput(source);
-  const allowRemoteUrls = options.allowRemoteUrls ?? false;
+  const allowRemoteUrls = options.allowRemoteUrls ?? true;
   const fetchCredentials = options.fetchCredentials ?? 'same-origin';
   let blob: Blob;
   let sourceKind: ResolvedDocument['sourceKind'] = 'blob';

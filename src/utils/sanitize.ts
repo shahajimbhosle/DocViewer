@@ -2,6 +2,10 @@ import DOMPurify from 'dompurify';
 
 const networkResourceAttributes = ['src', 'srcset', 'poster', 'data', 'xlink:href'];
 
+interface SanitizeHtmlOptions {
+  allowRemoteImages?: boolean;
+}
+
 export function isNetworkReference(value: string): boolean {
   const clean = value.trim();
   return /^https?:\/\//i.test(clean) || /^\/\//.test(clean);
@@ -27,7 +31,7 @@ export function isSafeNavigationHref(value: string): boolean {
   return true;
 }
 
-export function sanitizeHtml(html: string): string {
+export function sanitizeHtml(html: string, options: SanitizeHtmlOptions = {}): string {
   const sanitized = DOMPurify.sanitize(html, {
     FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'link', 'meta'],
     FORBID_ATTR: ['style'],
@@ -48,9 +52,19 @@ export function sanitizeHtml(html: string): string {
     networkResourceAttributes.forEach((attribute) => {
       const value = element.getAttribute(attribute);
       if (value && isNetworkReference(value)) {
-        element.removeAttribute(attribute);
+        const isAllowedRemoteImage =
+          options.allowRemoteImages && tagName === 'img' && (attribute === 'src' || attribute === 'srcset');
+
+        if (!isAllowedRemoteImage) {
+          element.removeAttribute(attribute);
+        }
       }
     });
+
+    if (tagName === 'img' && options.allowRemoteImages) {
+      element.setAttribute('loading', 'lazy');
+      element.setAttribute('referrerpolicy', 'no-referrer');
+    }
 
     if (tagName !== 'a') {
       const href = element.getAttribute('href');

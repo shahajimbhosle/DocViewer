@@ -68,6 +68,7 @@ export interface DocumentRendererProps {
   state: ViewerRuntimeState;
   actions: RendererActions;
   controls: ResolvedDocumentViewerControls;
+  markdownOptions: ResolvedDocumentViewerMarkdownOptions;
   pdfOptions: ResolvedDocumentViewerPdfOptions;
   labels: DocumentViewerLabels;
   viewportRef: RefObject<HTMLDivElement>;
@@ -102,6 +103,12 @@ export interface DocumentViewerPdfOptions {
 }
 
 export type ResolvedDocumentViewerPdfOptions = Required<DocumentViewerPdfOptions>;
+
+export interface DocumentViewerMarkdownOptions {
+  allowRemoteImages?: boolean;
+}
+
+export type ResolvedDocumentViewerMarkdownOptions = Required<DocumentViewerMarkdownOptions>;
 
 export interface DocumentViewerLabels {
   openFile: string;
@@ -148,6 +155,7 @@ export interface DocumentViewerProps {
   initialZoom?: number;
   initialPage?: number;
   controls?: DocumentViewerControls;
+  markdownOptions?: DocumentViewerMarkdownOptions;
   pdfOptions?: DocumentViewerPdfOptions;
   labels?: Partial<DocumentViewerLabels>;
   emptyState?: ReactNode;

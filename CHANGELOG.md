@@ -4,6 +4,21 @@ All notable changes to `@shahajimbhosle/local-doc-viewer` will be documented in 
 
 This project follows semantic versioning. Dates use `YYYY-MM-DD`.
 
+## [1.0.8] - 2026-07-20
+
+### Added
+
+- Added `markdownOptions.allowRemoteImages` so apps can explicitly disable remote Markdown images when they need a stricter no-outbound-resource policy.
+
+### Changed
+
+- Aligned the default privacy model with user-provided content rendering: direct document URLs are allowed by default, while documents are still not uploaded to third-party preview services.
+- Render remote Markdown images by default as safe user-provided display content, with lazy loading and `referrerpolicy="no-referrer"`.
+
+### Fixed
+
+- Kept safe remote image sources visible in the Markdown renderer while continuing to remove scripts, event handlers, unsafe URL schemes, and active embedded content.
+
 ## [1.0.7] - 2026-07-18
 
 ### Added
@@ -27,7 +42,6 @@ This project follows semantic versioning. Dates use `YYYY-MM-DD`.
 - Fixed OpenDocument `lr-tb` writing mode so normal ODT text and ODS cells do not render vertically.
 - Kept selected PDF/PPTX thumbnail borders above adjacent hover states.
 - Rendered basic XLSX charts/graphs that were previously ignored because they live in worksheet drawing parts outside the cell grid.
-- Showed ellipsis for clipped spreadsheet cell content and exposed the full value in a local hover popover.
 - Kept DOCX internal reference/bookmark links inside the viewer instead of opening the app domain in a new tab.
 - Preserved visible DOCX VML shape geometry and added local fallback rendering for unresolved DOCX images and unsupported DrawingML Word shapes.
 - Restored fit width and fit page controls for DOCX previews.

@@ -1,8 +1,23 @@
 # Local Document Viewer for React
 
-A privacy-first React document viewer that renders files in the browser without uploading them to Google Docs, Office Online, a SaaS preview API, or any third-party domain.
+<p align="center">
+  <a href="https://www.npmjs.com/package/@shahajimbhosle/local-doc-viewer">
+    <img src="https://img.shields.io/npm/v/@shahajimbhosle/local-doc-viewer?label=npm&color=cb3837" alt="npm version" />
+  </a>
+  <a href="https://github.com/shahajimbhosle/DocViewer/blob/main/LICENSE">
+    <img src="https://img.shields.io/npm/l/@shahajimbhosle/local-doc-viewer?label=license&color=16a34a" alt="license" />
+  </a>
+  <img src="https://img.shields.io/badge/TypeScript-ready-3178c6" alt="TypeScript ready" />
+  <img src="https://img.shields.io/badge/ESM%20%2B%20CJS-supported-2563eb" alt="ESM and CJS supported" />
+  <img src="https://img.shields.io/badge/no--upload-browser--rendered-0f766e" alt="no upload browser rendered" />
+  <a href="https://bundlephobia.com/package/@shahajimbhosle/local-doc-viewer">
+    <img src="https://img.shields.io/bundlephobia/minzip/@shahajimbhosle/local-doc-viewer?label=minzip" alt="bundle size" />
+  </a>
+</p>
 
-The package is designed for confidential documents. It accepts `File`, `Blob`, `ArrayBuffer`, `Uint8Array`, `blob:` URLs, and `data:` URLs. `http://` and `https://` document URLs are rejected by default.
+A privacy-first React document viewer that renders files in the browser without uploading them to Google Docs, Office Online, a SaaS preview API, or any third-party preview service.
+
+The package is designed for confidential documents. It accepts `File`, `Blob`, `ArrayBuffer`, `Uint8Array`, `blob:` URLs, `data:` URLs, and direct document URLs. Documents are rendered by the browser/package code, not uploaded to Google Docs, Office Online, a SaaS preview API, or any third-party document viewer.
 
 ## Links
 
@@ -83,19 +98,36 @@ By default, the viewer:
 
 - Does not upload files
 - Does not call third-party document preview services
-- Rejects `http://` and `https://` document URLs
-- Uses local `Blob` URLs for preview/download/print flows
+- Fetches direct document URLs only when the application provides them as the document source
+- Uses `Blob` URLs for preview/download/print flows after the source is resolved
 - Sanitizes generated HTML to remove scripts, event handlers, and embedded executable content
-- Removes automatic remote resource references from rendered HTML, such as image and embed sources
+- Removes unsafe executable content while preserving safe user-provided display content, including Markdown image URLs
 - Keeps Markdown and document links clickable when the sanitizer considers the URL safe, and opens them in a new unlinked tab with `noopener noreferrer`
-- Removes external PPTX relationships before rendering so linked resources are not fetched
+- Hardens automatic Office package relationships that can trigger hidden external fetches during rendering; normal safe links remain clickable
 - Uses a packaged PDF.js worker instead of a CDN worker
 
-If your app serves confidential documents from its own trusted private endpoint, opt in explicitly:
+Markdown image URLs are rendered by default because they are user-provided document content. They are sanitized, lazy-loaded, and rendered with `referrerpolicy="no-referrer"`. If your app needs a stricter no-outbound-resource policy, disable remote Markdown images explicitly:
 
 ```tsx
 <DocumentViewer
-  allowRemoteUrls
+  markdownOptions={{ allowRemoteImages: false }}
+  source={readmeFile}
+/>
+```
+
+If your app needs to forbid direct `http://` and `https://` document URLs, disable them explicitly:
+
+```tsx
+<DocumentViewer
+  allowRemoteUrls={false}
+  source="https://example.com/document.pdf"
+/>
+```
+
+For private endpoints that need credentials:
+
+```tsx
+<DocumentViewer
   fetchCredentials="include"
   source={{
     url: '/api/private-documents/123',
@@ -205,6 +237,7 @@ Use document-specific option objects for behavior that only applies to one rende
 
 ```tsx
 <DocumentViewer
+  markdownOptions={{ allowRemoteImages: false }}
   pdfOptions={{ showThumbnails: true }}
   source={file}
 />
